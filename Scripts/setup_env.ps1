@@ -465,14 +465,21 @@ function Invoke-EdrInstallation {
 }
 
 function Invoke-EdrUninstallation {
+    param(
+        [Parameter(Mandatory=$false)]
+        [string]$Password,
+        [Parameter(Mandatory=$false)]
+        [string]$KeyFile
+    )
+
     Write-Section "TEHTRIS EDR UNINSTALLATION"
 
-    if ($PSBoundParameters.ContainsKey('UninstallEdrPassword')) {
-        Invoke-TehtrisEdrUninstaller -Password $UninstallEdrPassword
-    } elseif ($PSBoundParameters.ContainsKey('UninstallEdrKeyFile')) {
-        Invoke-TehtrisEdrUninstaller -KeyFilePath $UninstallEdrKeyFile
+    if ($Password) {
+        Invoke-TehtrisEdrUninstaller -Password $Password
+    } elseif ($KeyFile) {
+        Invoke-TehtrisEdrUninstaller -KeyFilePath $KeyFile
     } else {
-        Write-Log "Either -UninstallEdrPassword or -UninstallEdrKeyFile must be provided." -Level "ERROR"
+        Write-Log "Either a password or a key file must be provided for uninstallation." -Level "ERROR"
         return $false
     }
 }
@@ -573,7 +580,7 @@ try {
         }
         if ($PSBoundParameters.ContainsKey('UninstallEdrPassword') -or $PSBoundParameters.ContainsKey('UninstallEdrKeyFile')) {
             if (-not $PSBoundParameters.ContainsKey('InstallEdrMsiPath')) {
-                Invoke-EdrUninstallation
+                Invoke-EdrUninstallation -Password $UninstallEdrPassword -KeyFile $UninstallEdrKeyFile
             }
         }
     }
