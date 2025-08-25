@@ -611,22 +611,28 @@ class TehtrisEDRUninstaller:
         try:
             if not self.validate_prerequisites():
                 return False
+            time.sleep(0.5)
 
             if not self.find_and_launch_uninstaller():
                 return False
+            time.sleep(0.5)
 
             # Center the uninstaller window
             if not self.center_window():
                 self.logger.warning("Could not center the window.")
+            time.sleep(0.5)
 
             if not self.handle_welcome_screen():
                 return False
+            time.sleep(0.5)
 
             if not self.handle_verification_screen():
                 return False
+            time.sleep(0.5)
 
             if not self.handle_remove_screen():
                 return False
+            time.sleep(0.5)
 
             if not self.wait_for_completion():
                 return False

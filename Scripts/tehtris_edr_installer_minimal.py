@@ -438,28 +438,36 @@ class TehtrisEDRInstaller:
                     self.logger.error("Failed to uninstall existing TEHTRIS EDR. Cannot proceed with installation.")
                     return False
 
-                self.logger.info("Existing installation removed. Proceeding with new installation...")
+                self.logger.info("Existing installation removed. Pausing before new installation...")
+                time.sleep(0.5)
 
             if not self.validate_prerequisites():
                 return False
+            time.sleep(0.5)
 
             if not self.launch_installer():
                 return False
+            time.sleep(0.5)
 
             if not self.handle_welcome_screen():
                 return False
+            time.sleep(0.5)
 
             if not self.handle_license_agreement():
                 return False
+            time.sleep(0.5)
 
             if not self.handle_activation_information():
                 return False
+            time.sleep(0.5)
 
             if not self.handle_installation():
                 return False
+            time.sleep(0.5)
 
             if not self.wait_for_completion():
                 return False
+            time.sleep(0.5)
 
             if not self.verify_installation(post_install_check=True):
                 return False

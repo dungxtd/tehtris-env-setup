@@ -551,11 +551,13 @@ try {
         Set-WindowsDefender -Disable $true
         Set-WindowsFirewall -Disable $true
         Invoke-ToolDeployment
-        if ($PSBoundParameters.ContainsKey('InstallEdrMsiPath')) {
-            Invoke-EdrInstallation -MsiPath $InstallEdrMsiPath -UninstallPassword $UninstallEdrPassword -UninstallKeyFile $UninstallEdrKeyFile
+        $msiPathToInstall = if ($PSBoundParameters.ContainsKey('InstallEdrMsiPath')) {
+            $InstallEdrMsiPath
         } else {
-            Write-Log "-InstallEdrMsiPath not provided with -All switch. Skipping EDR installation." -Level "INFO"
+            Write-Log "-InstallEdrMsiPath not provided with -All switch. Using default EDR installer." -Level "INFO"
+            Join-Path $Global:ToolsDir "TEHTRIS_EDR_2.0.0_Windows_x86_64_MS-28.msi"
         }
+        Invoke-EdrInstallation -MsiPath $msiPathToInstall -UninstallPassword $UninstallEdrPassword -UninstallKeyFile $UninstallEdrKeyFile
     } else {
         # Individual actions
         if ($DisableSec.IsPresent) {
