@@ -1,0 +1,17 @@
+# Logs
+*.log
+
+# Tool Installers & Temporary Files
+/Tools/mimikatz/
+/Temp/
+mimikatz.zip
+nmap-installer.exe
+npcap-installer.exe
+
+# Python specific
+__pycache__/
+*.pyc
+
+# VSCode specific
+.vscode/
+
