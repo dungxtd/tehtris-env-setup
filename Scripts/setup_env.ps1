@@ -13,21 +13,34 @@
 #>
 
 param(
-    [switch]$SkipToolInstallation,
-    [switch]$CleanupOnly,
-    [string]$BaseDir = "C:\Temp\SecurityTesting",
-    [string]$LogPath = "$BaseDir\Logs\setup_env.log"
+    [Parameter(Mandatory=$false)]
+    [switch]$DisableSec,
+
+    [Parameter(Mandatory=$false)]
+    [switch]$EnableSec,
+
+    [Parameter(Mandatory=$false)]
+    [switch]$InstallTools,
+
+    [Parameter(Mandatory=$false)]
+    [string]$InstallEdrMsiPath,
+
+    [Parameter(Mandatory=$false)]
+    [switch]$UninstallEdr,
+
+    [Parameter(Mandatory=$false)]
+    [switch]$All
 )
 
 # Global variables for state tracking
-$Global:OriginalDefenderState = $null
-$Global:OriginalFirewallStates = @{}
-$Global:BaseDir = $BaseDir
-$Global:ScriptsDir = Join-Path $BaseDir "Scripts"
-$Global:ToolsDir = Join-Path $BaseDir "Tools"
-$Global:LogsDir = Join-Path $BaseDir "Logs"
+
+# Determine paths based on the script's location
+$Global:ScriptsDir = $PSScriptRoot
+$Global:BaseDir = (Get-Item $Global:ScriptsDir).Parent.FullName
+$Global:ToolsDir = Join-Path $Global:BaseDir "Tools"
+$Global:LogsDir = Join-Path $Global:BaseDir "Logs"
 $Global:TempDir = "C:\Temp" # For temporary downloads
-$Global:LogPath = $LogPath
+$Global:LogPath = Join-Path $Global:LogsDir "setup_env.log"
 $Global:ScriptStartTime = Get-Date
 
 #region Logging Functions
@@ -96,78 +109,55 @@ function Test-AdminPrivileges {
 #endregion
 
 #region Security Configuration Functions
-function Save-DefenderState {
-    Write-Log "Saving current Windows Defender state..." -Level "INFO"
+function Set-WindowsDefender {
+    param(
+        [Parameter(Mandatory=$true)]
+        [bool]$Disable
+    )
 
     try {
-        $defenderPrefs = Get-MpPreference
-        $Global:OriginalDefenderState = @{
-            DisableRealtimeMonitoring = $defenderPrefs.DisableRealtimeMonitoring
-            DisableBehaviorMonitoring = $defenderPrefs.DisableBehaviorMonitoring
-
+        if ($Disable) {
+            Write-Log "Disabling Windows Defender real-time protection..." -Level "INFO"
+            Set-MpPreference -DisableRealtimeMonitoring $true
+            Set-MpPreference -DisableBehaviorMonitoring $true
+            Write-Log "Windows Defender real-time protection disabled." -Level "SUCCESS"
+        } else {
+            Write-Log "Enabling Windows Defender real-time protection..." -Level "INFO"
+            Set-MpPreference -DisableRealtimeMonitoring $false
+            Set-MpPreference -DisableBehaviorMonitoring $false
+            Write-Log "Windows Defender real-time protection enabled." -Level "SUCCESS"
         }
-        Write-Log "Windows Defender state saved successfully." -Level "SUCCESS"
         return $true
     }
     catch {
-        Write-Log "Error saving Windows Defender state: $($_.Exception.Message)" -Level "ERROR"
+        Write-Log "Error configuring Windows Defender: $($_.Exception.Message)" -Level "ERROR"
         return $false
     }
 }
 
-function Disable-WindowsDefender {
-    Write-Log "Temporarily disabling Windows Defender real-time protection..." -Level "INFO"
-
-    try {
-        Set-MpPreference -DisableRealtimeMonitoring $true
-        Set-MpPreference -DisableBehaviorMonitoring $true
-
-
-        Write-Log "Windows Defender real-time protection disabled." -Level "SUCCESS"
-        return $true
-    }
-    catch {
-        Write-Log "Error disabling Windows Defender: $($_.Exception.Message)" -Level "ERROR"
-        return $false
-    }
-}
-
-function Save-FirewallStates {
-    Write-Log "Saving current Windows Firewall states..." -Level "INFO"
+function Set-WindowsFirewall {
+    param(
+        [Parameter(Mandatory=$true)]
+        [bool]$Disable
+    )
 
     try {
         $profiles = @("Domain", "Private", "Public")
+        $targetState = if ($Disable) { 'False' } else { 'True' }
+        $statusWord = if ($Disable) { "Disabling" } else { "Enabling" }
+
+        Write-Log "$statusWord Windows Firewall for all profiles..." -Level "INFO"
 
         foreach ($profile in $profiles) {
-            $firewallProfile = Get-NetFirewallProfile -Name $profile
-            $Global:OriginalFirewallStates[$profile] = $firewallProfile.Enabled
+            Set-NetFirewallProfile -Name $profile -Enabled $targetState
+            Write-Log "$statusWord firewall for $profile profile." -Level "INFO"
         }
 
-        Write-Log "Windows Firewall states saved successfully." -Level "SUCCESS"
+        Write-Log "Windows Firewall configuration complete." -Level "SUCCESS"
         return $true
     }
     catch {
-        Write-Log "Error saving Windows Firewall states: $($_.Exception.Message)" -Level "ERROR"
-        return $false
-    }
-}
-
-function Disable-WindowsFirewall {
-    Write-Log "Temporarily disabling Windows Firewall for all profiles..." -Level "INFO"
-
-    try {
-        $profiles = @("Domain", "Private", "Public")
-
-        foreach ($profile in $profiles) {
-            Set-NetFirewallProfile -Name $profile -Enabled False
-            Write-Log "Disabled firewall for $profile profile." -Level "INFO"
-        }
-
-        Write-Log "Windows Firewall disabled for all profiles." -Level "SUCCESS"
-        return $true
-    }
-    catch {
-        Write-Log "Error disabling Windows Firewall: $($_.Exception.Message)" -Level "ERROR"
+        Write-Log "Error configuring Windows Firewall: $($_.Exception.Message)" -Level "ERROR"
         return $false
     }
 }
@@ -203,8 +193,45 @@ function Add-DirectoryToPath {
         return $false
     }
 }
-
 #region Tool Installation Functions
+function Install-PythonSilently {
+    Write-Log "Checking for Python installation..." -Level "INFO"
+
+    try {
+        # Check if python is in PATH
+        $pythonPath = Get-Command python -ErrorAction SilentlyContinue
+        if ($pythonPath) {
+            Write-Log "Python is already installed at: $($pythonPath.Source)" -Level "SUCCESS"
+            return $true
+        }
+
+        Write-Log "Python not found. Starting silent installation..." -Level "INFO"
+
+        $tempInstaller = Join-Path $Global:TempDir "python-installer.exe"
+        $downloadUrl = "https://www.python.org/ftp/python/3.11.4/python-3.11.4-amd64.exe" # Specify a recent, stable version
+
+        Write-Log "Downloading Python installer from $downloadUrl..." -Level "INFO"
+        Invoke-WebRequest -Uri $downloadUrl -OutFile $tempInstaller -UseBasicParsing
+        Write-Log "Python installer downloaded successfully." -Level "SUCCESS"
+
+        Write-Log "Starting silent installation..." -Level "INFO"
+        $installProcess = Start-Process -FilePath $tempInstaller -ArgumentList "/quiet InstallAllUsers=1 PrependPath=1" -Wait -PassThru
+
+        if ($installProcess.ExitCode -eq 0) {
+            Write-Log "Python installed successfully." -Level "SUCCESS"
+            # Update PATH for the current session
+            $env:Path = [System.Environment]::GetEnvironmentVariable("Path", "Machine")
+            return $true
+        } else {
+            throw "Python installation failed with exit code: $($installProcess.ExitCode)"
+        }
+    }
+    catch {
+        Write-Log "Error installing Python: $($_.Exception.Message)" -Level "ERROR"
+        return $false
+    }
+}
+
 function Install-Mimikatz {
     Write-Log "Starting Mimikatz installation..." -Level "INFO"
 
@@ -398,77 +425,47 @@ function Invoke-TehtrisEdrUninstaller {
 }
 #endregion
 
-#region Cleanup and Restoration Functions
-function Restore-WindowsDefender {
-    Write-Log "Restoring Windows Defender to original state..." -Level "INFO"
-
-    try {
-        if ($Global:OriginalDefenderState) {
-            Set-MpPreference -DisableRealtimeMonitoring $Global:OriginalDefenderState.DisableRealtimeMonitoring
-            Set-MpPreference -DisableBehaviorMonitoring $Global:OriginalDefenderState.DisableBehaviorMonitoring
-
-
-            Write-Log "Windows Defender restored to original state." -Level "SUCCESS"
-            return $true
-        } else {
-            Write-Log "No original Windows Defender state found to restore." -Level "WARN"
-            return $false
-        }
-    }
-    catch {
-        Write-Log "Error restoring Windows Defender: $($_.Exception.Message)" -Level "ERROR"
-        return $false
-    }
-}
-
-function Restore-WindowsFirewall {
-    Write-Log "Restoring Windows Firewall to original states..." -Level "INFO"
-
-    try {
-        if ($Global:OriginalFirewallStates.Count -gt 0) {
-            foreach ($profile in $Global:OriginalFirewallStates.Keys) {
-                $originalState = $Global:OriginalFirewallStates[$profile]
-                Set-NetFirewallProfile -Name $profile -Enabled $originalState
-                Write-Log "Restored firewall for $profile profile to: $originalState" -Level "INFO"
-            }
-
-            Write-Log "Windows Firewall restored to original states." -Level "SUCCESS"
-            return $true
-        } else {
-            Write-Log "No original Windows Firewall states found to restore." -Level "WARN"
-            return $false
-        }
-    }
-    catch {
-        Write-Log "Error restoring Windows Firewall: $($_.Exception.Message)" -Level "ERROR"
-        return $false
-    }
-}
-
-function Invoke-Cleanup {
-    Write-Section "CLEANUP AND RESTORATION"
-
-    $cleanupSuccess = $true
-
-    # Restore Windows Defender
-    if (!(Restore-WindowsDefender)) {
-        $cleanupSuccess = $false
-    }
-
-    # Restore Windows Firewall
-    if (!(Restore-WindowsFirewall)) {
-        $cleanupSuccess = $false
-    }
-
-    if ($cleanupSuccess) {
-        Write-Log "All security settings restored successfully." -Level "SUCCESS"
+function Invoke-EdrInstallation {
+    Write-Section "TEHTRIS EDR INSTALLATION"
+    if (-not ([string]::IsNullOrEmpty($InstallEdrMsiPath))) {
+        Invoke-TehtrisEdrInstaller -MsiPath $InstallEdrMsiPath
     } else {
-        Write-Log "Some security settings could not be restored. Please check manually." -Level "WARN"
+        Write-Log "The -InstallEdrMsiPath parameter is required to install the EDR." -Level "ERROR"
+        return $false
     }
-
-    return $cleanupSuccess
 }
-#endregion
+
+function Invoke-EdrUninstallation {
+    Write-Section "TEHTRIS EDR UNINSTALLATION"
+
+    try {
+        Write-Host "To uninstall TEHTRIS EDR, you need to provide either:"
+        Write-Host "1. Uninstall password"
+        Write-Host "2. Path to uninstall key file"
+        Write-Host
+
+        $choice = Read-Host -Prompt "Enter '1' for password or '2' for key file"
+
+        if ($choice -eq '1') {
+            $password = Read-Host -Prompt "Enter uninstall password"
+            Invoke-TehtrisEdrUninstaller -Password $password
+        } elseif ($choice -eq '2') {
+            $keyFilePath = Read-Host -Prompt "Enter path to uninstall key file"
+            Invoke-TehtrisEdrUninstaller -KeyFilePath $keyFilePath
+        } else {
+            Write-Log "Invalid choice. Please enter '1' or '2'." -Level "ERROR"
+            return $false
+        }
+
+        return $true
+    }
+    catch {
+        Write-Log "Error during EDR uninstallation: $($_.Exception.Message)" -Level "ERROR"
+        return $false
+    }
+}
+
+
 
 
 #region Main Orchestration
@@ -489,40 +486,15 @@ function Initialize-Environment {
         }
     }
 
+    # Ensure Python is installed
+    if (!(Install-PythonSilently)) {
+        throw "Python installation failed. Cannot proceed."
+    }
+
     Write-Log "Environment initialization completed." -Level "SUCCESS"
 }
 
-function Invoke-SecurityPreConfiguration {
-    Write-Section "SECURITY PRE-CONFIGURATION"
 
-    $success = $true
-
-    # Save and disable Windows Defender
-    if (Save-DefenderState) {
-        if (!(Disable-WindowsDefender)) {
-            $success = $false
-        }
-    } else {
-        $success = $false
-    }
-
-    # Save and disable Windows Firewall
-    if (Save-FirewallStates) {
-        if (!(Disable-WindowsFirewall)) {
-            $success = $false
-        }
-    } else {
-        $success = $false
-    }
-
-    if ($success) {
-        Write-Log "Security pre-configuration completed successfully." -Level "SUCCESS"
-    } else {
-        Write-Log "Security pre-configuration encountered errors." -Level "ERROR"
-    }
-
-    return $success
-}
 
 function Invoke-ToolDeployment {
     Write-Section "TOOL DEPLOYMENT"
@@ -548,42 +520,60 @@ function Invoke-ToolDeployment {
     return $success
 }
 
-function Start-Orchestration {
-    Write-Section "STARTING SECURITY ENVIRONMENT SETUP"
+# Main Orchestration
+Write-Section "STARTING SECURITY ENVIRONMENT SETUP"
 
-    try {
-        Initialize-Environment
+try {
+    Initialize-Environment
 
-        if ($CleanupOnly) {
-            Write-Log "CleanupOnly parameter specified. Skipping main setup." -Level "INFO"
-            return # Skip to finally block for cleanup
+    if ($All) {
+        Write-Log "'-All' switch specified. Running full setup..." -Level "INFO"
+        Write-Section "SECURITY CONFIGURATION"
+        Set-WindowsDefender -Disable $true
+        Set-WindowsFirewall -Disable $true
+        Invoke-ToolDeployment
+        if ($PSBoundParameters.ContainsKey('InstallEdrMsiPath')) {
+            Invoke-EdrInstallation
+        } else {
+            Write-Log "-InstallEdrMsiPath not provided with -All switch. Skipping EDR installation." -Level "INFO"
         }
-
-        # Main setup steps
-        if (Invoke-SecurityPreConfiguration) {
-            if (-not $SkipToolInstallation) {
-                Invoke-ToolDeployment
-            } else {
-                Write-Log "SkipToolInstallation parameter specified. Skipping tool deployment." -Level "INFO"
-            }
+    } else {
+        # Individual actions
+        if ($DisableSec.IsPresent) {
+            Write-Log "Processing -DisableSec parameter..." -Level "INFO"
+            Write-Section "SECURITY CONFIGURATION"
+            Set-WindowsDefender -Disable $true
+            Set-WindowsFirewall -Disable $true
         }
+        if ($EnableSec.IsPresent) {
+            Write-Log "Processing -EnableSec parameter..." -Level "INFO"
+            Write-Section "SECURITY CONFIGURATION"
+            Set-WindowsDefender -Disable $false
+            Set-WindowsFirewall -Disable $false
+        }
+        if ($InstallTools.IsPresent) {
+            Write-Log "Processing -InstallTools parameter..." -Level "INFO"
+            Invoke-ToolDeployment
+        }
+        if ($PSBoundParameters.ContainsKey('InstallEdrMsiPath')) {
+            Write-Log "Processing -InstallEdrMsiPath parameter..." -Level "INFO"
+            Invoke-EdrInstallation
+        }
+        if ($UninstallEdr.IsPresent) {
+            Write-Log "Processing -UninstallEdr parameter..." -Level "INFO"
+            Invoke-EdrUninstallation
+        }
+    }
 
-        Write-Log "Main setup tasks completed. The environment is ready." -Level "SUCCESS"
-    }
-    catch {
-        Write-Log "An unexpected error occurred during setup: $($_.Exception.Message)" -Level "ERROR"
-    }
-    finally {
-        # This block will always execute, ensuring cleanup
-        Invoke-Cleanup
-
-        $scriptEndTime = Get-Date
-        $scriptDuration = New-TimeSpan -Start $Global:ScriptStartTime -End $scriptEndTime
-        Write-Section "SCRIPT EXECUTION SUMMARY"
-        Write-Log "Script finished in: $($scriptDuration.TotalSeconds) seconds."
-    }
+    Write-Log "Script actions completed." -Level "SUCCESS"
 }
-
-# Entry point of the script
-Start-Orchestration
+catch {
+    Write-Log "An unexpected error occurred: $($_.Exception.Message)" -Level "ERROR"
+}
+finally {
+    $scriptEndTime = Get-Date
+    $scriptDuration = New-TimeSpan -Start $Global:ScriptStartTime -End $scriptEndTime
+    Write-Section "SCRIPT EXECUTION SUMMARY"
+    Write-Log "Script finished in: $($scriptDuration.TotalSeconds) seconds."
+}
 #endregion

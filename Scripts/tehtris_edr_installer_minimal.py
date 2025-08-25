@@ -8,6 +8,7 @@ import sys
 import time
 import logging
 import subprocess
+import getpass
 from pathlib import Path
 
 try:
@@ -20,53 +21,53 @@ except ImportError:
 
 class TehtrisEDRInstaller:
     """Minimal TEHTRIS EDR installer automation."""
-    
+
     def __init__(self, msi_path: str):
         self.msi_path = Path(msi_path)
         self.logger = self._setup_logging()
-        
+
         # Configuration
         self.server_address = "xpgapp16.tehtris.net"
         self.tag = "XPG_QAT"
         self.license_key = "MH83-2CDX-9DXQ-LG89-92FF"
-    
+
     def _setup_logging(self) -> logging.Logger:
         """Setup logging."""
         logger = logging.getLogger('TehtrisEDRInstaller')
         logger.setLevel(logging.INFO)
-        
+
         # File handler
         file_handler = logging.FileHandler('tehtris_installation.log', mode='w')
         file_handler.setLevel(logging.INFO)
         file_formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
         file_handler.setFormatter(file_formatter)
-        
+
         # Console handler
         console_handler = logging.StreamHandler()
         console_handler.setLevel(logging.INFO)
         console_formatter = logging.Formatter('%(levelname)s - %(message)s')
         console_handler.setFormatter(console_formatter)
-        
+
         logger.addHandler(file_handler)
         logger.addHandler(console_handler)
-        
+
         return logger
 
     def validate_prerequisites(self) -> bool:
         """Validate prerequisites."""
         self.logger.info("Validating prerequisites...")
-        
+
         if not self.msi_path.exists():
             self.logger.error(f"MSI file not found: {self.msi_path}")
             return False
-        
+
         if not self._is_admin():
             self.logger.error("Administrator privileges required")
             return False
-        
+
         self.logger.info("Prerequisites validated successfully")
         return True
-    
+
     def _is_admin(self) -> bool:
         """Check admin privileges."""
         try:
@@ -80,9 +81,9 @@ class TehtrisEDRInstaller:
         try:
             import win32gui
             import win32con
-            
+
             self.logger.info(f"Looking for button: {button_text}")
-            
+
             # Find TEHTRIS windows
             tehtris_windows = []
             def find_windows(hwnd, windows):
@@ -94,10 +95,10 @@ class TehtrisEDRInstaller:
                 except:
                     pass
                 return True
-            
+
             win32gui.EnumWindows(find_windows, tehtris_windows)
             self.logger.info(f"Found {len(tehtris_windows)} TEHTRIS windows")
-            
+
             # Search for button
             for tehtris_hwnd in tehtris_windows:
                 try:
@@ -106,11 +107,11 @@ class TehtrisEDRInstaller:
                             if win32gui.IsWindowVisible(hwnd):
                                 window_text = win32gui.GetWindowText(hwnd)
                                 class_name = win32gui.GetClassName(hwnd)
-                                
+
                                 if window_text and class_name == 'Button':
                                     clean_text = window_text.replace('&', '').lower()
                                     clean_button = button_text.replace('&', '').lower()
-                                    
+
                                     if clean_button in clean_text:
                                         button_info['hwnd'] = hwnd
                                         button_info['text'] = window_text
@@ -118,23 +119,23 @@ class TehtrisEDRInstaller:
                         except:
                             pass
                         return True
-                    
+
                     button_info = {}
                     win32gui.EnumChildWindows(tehtris_hwnd, find_button, button_info)
-                    
+
                     if button_info.get('hwnd'):
                         win32gui.SendMessage(button_info['hwnd'], win32con.WM_LBUTTONDOWN, 0, 0)
                         win32gui.SendMessage(button_info['hwnd'], win32con.WM_LBUTTONUP, 0, 0)
                         self.logger.info(f"Clicked button: {button_info['text']}")
                         return True
-                        
+
                 except Exception as e:
                     self.logger.debug(f"Error in window {tehtris_hwnd}: {e}")
                     continue
-            
+
             self.logger.error(f"Button '{button_text}' not found")
             return False
-            
+
         except Exception as e:
             self.logger.error(f"win32gui click failed: {e}")
             return False
@@ -144,9 +145,9 @@ class TehtrisEDRInstaller:
         try:
             import win32gui
             import win32con
-            
+
             self.logger.info(f"Looking for field: {field_label}")
-            
+
             # Find TEHTRIS windows
             tehtris_windows = []
             def find_windows(hwnd, windows):
@@ -158,21 +159,21 @@ class TehtrisEDRInstaller:
                 except:
                     pass
                 return True
-            
+
             win32gui.EnumWindows(find_windows, tehtris_windows)
-            
+
             # Field mapping
             field_mapping = {
                 'server': 0,
-                'tag': 1, 
+                'tag': 1,
                 'license': 2
             }
-            
+
             field_index = field_mapping.get(field_label.lower())
             if field_index is None:
                 self.logger.error(f"Unknown field: {field_label}")
                 return False
-            
+
             # Find edit controls
             for tehtris_hwnd in tehtris_windows:
                 try:
@@ -186,9 +187,9 @@ class TehtrisEDRInstaller:
                         except:
                             pass
                         return True
-                    
+
                     win32gui.EnumChildWindows(tehtris_hwnd, find_edits, edit_controls)
-                    
+
                     if field_index < len(edit_controls):
                         edit_hwnd = edit_controls[field_index]
                         # Click on field to set focus
@@ -203,21 +204,21 @@ class TehtrisEDRInstaller:
                         time.sleep(0.1)
                         win32gui.SendMessage(edit_hwnd, win32con.WM_SETTEXT, 0, value)
                         time.sleep(0.2)
-                        
+
                         # Send Tab to trigger validation
                         win32gui.SendMessage(edit_hwnd, win32con.WM_KEYDOWN, win32con.VK_TAB, 0)
                         win32gui.SendMessage(edit_hwnd, win32con.WM_KEYUP, win32con.VK_TAB, 0)
-                        
+
                         self.logger.info(f"Filled {field_label} with '{value}'")
                         return True
-                        
+
                 except Exception as e:
                     self.logger.debug(f"Error in window {tehtris_hwnd}: {e}")
                     continue
-            
+
             self.logger.error(f"Field '{field_label}' not found")
             return False
-            
+
         except Exception as e:
             self.logger.error(f"Fill field failed: {e}")
             return False
@@ -225,20 +226,20 @@ class TehtrisEDRInstaller:
     def launch_installer(self) -> bool:
         """Launch MSI installer."""
         self.logger.info("Step 1: Launching installer...")
-        
+
         try:
             # Minimize windows
             if PYAUTOGUI_AVAILABLE:
                 pyautogui.hotkey('win', 'd')
                 time.sleep(1.5)
-            
+
             # Launch installer
             subprocess.Popen(['msiexec', '/i', str(self.msi_path)], shell=True)
             time.sleep(5)
-            
+
             self.logger.info("Installer launched successfully")
             return True
-            
+
         except Exception as e:
             self.logger.error(f"Failed to launch installer: {e}")
             return False
@@ -253,8 +254,24 @@ class TehtrisEDRInstaller:
         """Handle license agreement."""
         self.logger.info("Step 3: Handling license agreement...")
         time.sleep(0.5)
-        
-        if not self.click_with_win32gui("accept"):
+
+                # Try multiple possible license agreement button texts
+        license_buttons = [
+            "I accept the terms in the License Agreement",
+            "I accept",
+            "Accept",
+            "I agree",
+            "Agree"
+        ]
+
+        license_accepted = False
+        for button_text in license_buttons:
+            if self.click_with_win32gui(button_text):
+                license_accepted = True
+                break
+
+        if not license_accepted:
+            self.logger.error("Could not find license agreement acceptance button")
             return False
         time.sleep(0.5)
         return self.click_with_win32gui("Next")
@@ -263,7 +280,7 @@ class TehtrisEDRInstaller:
         """Handle activation information."""
         self.logger.info("Step 4: Handling activation information...")
         time.sleep(0.5)
-        
+
         # Fill fields
         if not self.fill_field_with_win32gui("server", self.server_address):
             return False
@@ -271,7 +288,7 @@ class TehtrisEDRInstaller:
             return False
         if not self.fill_field_with_win32gui("license", self.license_key):
             return False
-        
+
         time.sleep(1)
         return self.click_with_win32gui("Next")
 
@@ -279,60 +296,63 @@ class TehtrisEDRInstaller:
         """Handle installation."""
         self.logger.info("Step 5: Handling installation...")
         time.sleep(0.3)
-        
+
         # Try clicking Install button or use Alt+I
         if not self.click_with_win32gui("Install"):
             if PYAUTOGUI_AVAILABLE:
                 pyautogui.hotkey('alt', 'i')
                 time.sleep(1)
-        
+
         return True
 
     def wait_for_completion(self) -> bool:
         """Wait for completion."""
         self.logger.info("Step 6: Waiting for installation completion...")
-        
+
         completion_timeout = 180  # 3 minutes
         start_time = time.time()
-        
+
         while time.time() - start_time < completion_timeout:
             elapsed = int(time.time() - start_time)
             self.logger.info(f"Checking for completion... ({elapsed}s elapsed)")
-            
+
             if self.click_with_win32gui("Finish"):
                 self.logger.info("Clicked Finish button")
                 return True
             elif self.click_with_win32gui("Close"):
                 self.logger.info("Clicked Close button")
                 return True
-            
+
             time.sleep(2)
-        
+
         # Final attempt with Alt+F
         if PYAUTOGUI_AVAILABLE:
             self.logger.info("Trying Alt+F as final attempt")
             pyautogui.hotkey('alt', 'f')
             time.sleep(1)
             return True
-        
+
         self.logger.error("Installation did not complete within timeout")
         return False
 
-    def verify_installation(self) -> bool:
+    def verify_installation(self, post_install_check: bool = False) -> bool:
         """Verify installation by checking for TEHTRIS Agent processes."""
-        self.logger.info("Step 7: Verifying installation...")
-        
+        if post_install_check:
+            self.logger.info("Step 7: Verifying installation...")
+        else:
+            self.logger.info("Checking for existing TEHTRIS EDR installation...")
+
         try:
             import psutil
-            
+
             self.logger.info("Checking for Agent processes with TEHTRIS description...")
             tehtris_agents = []
-            
+
             for proc in psutil.process_iter(['pid', 'name', 'exe']):
                 try:
                     proc_info = proc.info
                     proc_name = proc_info['name'].lower()
-                    
+
                     if 'agent' in proc_name:
                         exe_path = proc_info.get('exe', '')
                         if exe_path and 'tehtris' in exe_path.lower():
@@ -342,54 +362,166 @@ class TehtrisEDRInstaller:
                                 'exe': exe_path
                             })
                             self.logger.info(f"[FOUND] TEHTRIS Agent: PID {proc_info['pid']} - {proc_info['name']} - {exe_path}")
-                            
+
                 except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
                     continue
-            
+
             if tehtris_agents:
-                self.logger.info(f"[SUCCESS] TEHTRIS EDR verified - Found {len(tehtris_agents)} Agent process(es)")
+                if post_install_check:
+                    self.logger.info(f"[SUCCESS] TEHTRIS EDR verified - Found {len(tehtris_agents)} Agent process(es)")
+                else:
+                    self.logger.warning("TEHTRIS EDR installation detected!")
+                return True
             else:
-                self.logger.warning("[NOT FOUND] No TEHTRIS Agent processes found")
-                self.logger.warning("Installation may have completed but processes haven't started yet")
-            
-            return True
-            
+                if post_install_check:
+                    self.logger.warning("[NOT FOUND] No TEHTRIS Agent processes found")
+                    self.logger.warning("Installation may have completed but processes haven't started yet")
+                else:
+                    self.logger.info("No existing TEHTRIS EDR installation found.")
+                return False
+
         except Exception as e:
             self.logger.warning(f"Verification failed: {e}")
-            return True
+            # In case of error during post-install check, we assume it's okay
+            # In case of error during pre-install check, we assume it's not installed
+            return post_install_check
+
+    def prompt_uninstall_confirmation(self) -> bool:
+        """Prompt user for uninstall confirmation."""
+        self.logger.info("Existing TEHTRIS EDR installation detected.")
+        print("\n" + "="*60)
+        print("EXISTING TEHTRIS EDR INSTALLATION DETECTED")
+        print("="*60)
+        print("An existing TEHTRIS EDR installation has been found on this system.")
+        print("To proceed with the new installation, the existing installation must be uninstalled first.")
+        print()
+
+        while True:
+            response = input("Do you want to uninstall the existing installation and proceed? (yes/no): ").strip().lower()
+            if response in ['yes', 'y']:
+                return True
+            elif response in ['no', 'n']:
+                print("Installation cancelled by user.")
+                return False
+            else:
+                print("Please enter 'yes' or 'no'.")
+
+    def get_uninstall_credentials(self) -> tuple:
+        """Get uninstall credentials from user."""
+        print("\n" + "-"*60)
+        print("UNINSTALL CREDENTIALS REQUIRED")
+        print("-"*60)
+        print("To uninstall TEHTRIS EDR, you need to provide either:")
+        print("1. Uninstall password")
+        print("2. Path to uninstall key file")
+        print()
+
+        while True:
+            choice = input("Enter '1' for password or '2' for key file: ").strip()
+            if choice == '1':
+                password = getpass.getpass("Enter uninstall password: ")
+                if password:
+                    return ('password', password)
+                else:
+                    print("Password cannot be empty. Please try again.")
+            elif choice == '2':
+                key_file_path = input("Enter path to uninstall key file: ").strip()
+                if key_file_path and os.path.exists(key_file_path):
+                    return ('keyfile', key_file_path)
+                elif not key_file_path:
+                    print("Path cannot be empty. Please try again.")
+                else:
+                    print(f"File not found: {key_file_path}. Please try again.")
+            else:
+                print("Please enter '1' or '2'.")
+
+    def uninstall_existing_edr(self, credential_type: str, credential_value: str) -> bool:
+        """Uninstall existing TEHTRIS EDR."""
+        self.logger.info("Starting TEHTRIS EDR uninstallation...")
+
+        try:
+            # Find the uninstaller script
+            uninstaller_script = os.path.join(os.path.dirname(__file__), "tehtris_edr_uninstaller.py")
+            if not os.path.exists(uninstaller_script):
+                self.logger.error(f"Uninstaller script not found: {uninstaller_script}")
+                return False
+
+            # Prepare command arguments
+            cmd = [sys.executable, uninstaller_script]
+            if credential_type == 'password':
+                cmd.extend(['--password', credential_value])
+            elif credential_type == 'keyfile':
+                cmd.extend(['--key-file', credential_value])
+
+            self.logger.info("Executing uninstaller...")
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
+
+            if result.returncode == 0:
+                self.logger.info("TEHTRIS EDR uninstalled successfully.")
+                # Wait a bit for cleanup
+                time.sleep(5)
+                return True
+            else:
+                self.logger.error(f"Uninstaller failed with exit code {result.returncode}")
+                self.logger.error(f"Error output: {result.stderr}")
+                return False
+
+        except subprocess.TimeoutExpired:
+            self.logger.error("Uninstaller timed out after 5 minutes.")
+            return False
+        except Exception as e:
+            self.logger.error(f"Error during uninstallation: {e}")
+            return False
+
 
     def run_installation(self) -> bool:
         """Run complete installation."""
         self.logger.info("Starting TEHTRIS EDR installation automation")
-        
+
         try:
+            # Check for existing installation first
+            if self.verify_installation(post_install_check=False):
+                if not self.prompt_uninstall_confirmation():
+                    self.logger.info("Installation cancelled by user.")
+                    return False
+
+                # Get uninstall credentials
+                credential_type, credential_value = self.get_uninstall_credentials()
+
+                # Uninstall existing EDR
+                if not self.uninstall_existing_edr(credential_type, credential_value):
+                    self.logger.error("Failed to uninstall existing TEHTRIS EDR. Cannot proceed with installation.")
+                    return False
+
+                self.logger.info("Existing installation removed. Proceeding with new installation...")
+
             if not self.validate_prerequisites():
                 return False
-            
+
             if not self.launch_installer():
                 return False
-            
+
             if not self.handle_welcome_screen():
                 return False
-            
+
             if not self.handle_license_agreement():
                 return False
-            
+
             if not self.handle_activation_information():
                 return False
-            
+
             if not self.handle_installation():
                 return False
-            
+
             if not self.wait_for_completion():
                 return False
-            
-            if not self.verify_installation():
+
+            if not self.verify_installation(post_install_check=True):
                 return False
-            
+
             self.logger.info("TEHTRIS EDR installation completed successfully!")
             return True
-            
+
         except Exception as e:
             self.logger.error(f"Installation failed: {e}")
             return False
@@ -399,10 +531,10 @@ def main():
     if len(sys.argv) != 2:
         print("Usage: python tehtris_edr_installer_minimal.py <path_to_msi>")
         sys.exit(1)
-    
+
     msi_path = sys.argv[1]
     installer = TehtrisEDRInstaller(msi_path)
-    
+
     success = installer.run_installation()
     sys.exit(0 if success else 1)
 
