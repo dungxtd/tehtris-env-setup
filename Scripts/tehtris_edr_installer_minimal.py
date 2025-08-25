@@ -8,7 +8,7 @@ import sys
 import time
 import logging
 import subprocess
-import getpass
+import argparse
 from pathlib import Path
 
 try:
@@ -22,8 +22,10 @@ except ImportError:
 class TehtrisEDRInstaller:
     """Minimal TEHTRIS EDR installer automation."""
 
-    def __init__(self, msi_path: str):
+    def __init__(self, msi_path: str, uninstall_password: str = None, uninstall_key_file: str = None):
         self.msi_path = Path(msi_path)
+        self.uninstall_password = uninstall_password
+        self.uninstall_key_file = uninstall_key_file
         self.logger = self._setup_logging()
 
         # Configuration
@@ -37,7 +39,7 @@ class TehtrisEDRInstaller:
         logger.setLevel(logging.INFO)
 
         # File handler
-        file_handler = logging.FileHandler('tehtris_installation.log', mode='w')
+        file_handler = logging.FileHandler('tehtris_installation.log')
         file_handler.setLevel(logging.INFO)
         file_formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
         file_handler.setFormatter(file_formatter)
@@ -229,9 +231,9 @@ class TehtrisEDRInstaller:
 
         try:
             # Minimize windows
-            if PYAUTOGUI_AVAILABLE:
-                pyautogui.hotkey('win', 'd')
-                time.sleep(1.5)
+            # if PYAUTOGUI_AVAILABLE:
+            #     pyautogui.hotkey('win', 'd')
+            #     time.sleep(1.5)
 
             # Launch installer
             subprocess.Popen(['msiexec', '/i', str(self.msi_path)], shell=True)
@@ -245,33 +247,28 @@ class TehtrisEDRInstaller:
             return False
 
     def handle_welcome_screen(self) -> bool:
-        """Handle welcome screen."""
+        """Handle welcome screen by repeatedly trying to click 'Next'."""
         self.logger.info("Step 2: Handling welcome screen...")
-        time.sleep(0.5)
-        return self.click_with_win32gui("Next")
+
+        timeout = 30  # 30 seconds
+        start_time = time.time()
+
+        while time.time() - start_time < timeout:
+            if self.click_with_win32gui("Next"):
+                self.logger.info("Successfully clicked 'Next' on the welcome screen.")
+                return True
+            self.logger.info("Welcome screen not ready yet, retrying in 2 seconds...")
+            time.sleep(2)
+
+        self.logger.error("Failed to handle welcome screen within timeout.")
+        return False
 
     def handle_license_agreement(self) -> bool:
         """Handle license agreement."""
         self.logger.info("Step 3: Handling license agreement...")
         time.sleep(0.5)
 
-                # Try multiple possible license agreement button texts
-        license_buttons = [
-            "I accept the terms in the License Agreement",
-            "I accept",
-            "Accept",
-            "I agree",
-            "Agree"
-        ]
-
-        license_accepted = False
-        for button_text in license_buttons:
-            if self.click_with_win32gui(button_text):
-                license_accepted = True
-                break
-
-        if not license_accepted:
-            self.logger.error("Could not find license agreement acceptance button")
+        if not self.click_with_win32gui("accept"):
             return False
         time.sleep(0.5)
         return self.click_with_win32gui("Next")
@@ -382,58 +379,7 @@ class TehtrisEDRInstaller:
 
         except Exception as e:
             self.logger.warning(f"Verification failed: {e}")
-            # In case of error during post-install check, we assume it's okay
-            # In case of error during pre-install check, we assume it's not installed
-            return post_install_check
-
-    def prompt_uninstall_confirmation(self) -> bool:
-        """Prompt user for uninstall confirmation."""
-        self.logger.info("Existing TEHTRIS EDR installation detected.")
-        print("\n" + "="*60)
-        print("EXISTING TEHTRIS EDR INSTALLATION DETECTED")
-        print("="*60)
-        print("An existing TEHTRIS EDR installation has been found on this system.")
-        print("To proceed with the new installation, the existing installation must be uninstalled first.")
-        print()
-
-        while True:
-            response = input("Do you want to uninstall the existing installation and proceed? (yes/no): ").strip().lower()
-            if response in ['yes', 'y']:
-                return True
-            elif response in ['no', 'n']:
-                print("Installation cancelled by user.")
-                return False
-            else:
-                print("Please enter 'yes' or 'no'.")
-
-    def get_uninstall_credentials(self) -> tuple:
-        """Get uninstall credentials from user."""
-        print("\n" + "-"*60)
-        print("UNINSTALL CREDENTIALS REQUIRED")
-        print("-"*60)
-        print("To uninstall TEHTRIS EDR, you need to provide either:")
-        print("1. Uninstall password")
-        print("2. Path to uninstall key file")
-        print()
-
-        while True:
-            choice = input("Enter '1' for password or '2' for key file: ").strip()
-            if choice == '1':
-                password = getpass.getpass("Enter uninstall password: ")
-                if password:
-                    return ('password', password)
-                else:
-                    print("Password cannot be empty. Please try again.")
-            elif choice == '2':
-                key_file_path = input("Enter path to uninstall key file: ").strip()
-                if key_file_path and os.path.exists(key_file_path):
-                    return ('keyfile', key_file_path)
-                elif not key_file_path:
-                    print("Path cannot be empty. Please try again.")
-                else:
-                    print(f"File not found: {key_file_path}. Please try again.")
-            else:
-                print("Please enter '1' or '2'.")
+            return post_install_check if post_install_check else False
 
     def uninstall_existing_edr(self, credential_type: str, credential_value: str) -> bool:
         """Uninstall existing TEHTRIS EDR."""
@@ -451,7 +397,7 @@ class TehtrisEDRInstaller:
             if credential_type == 'password':
                 cmd.extend(['--password', credential_value])
             elif credential_type == 'keyfile':
-                cmd.extend(['--key-file', credential_value])
+                cmd.extend(['--keyfile', credential_value])
 
             self.logger.info("Executing uninstaller...")
             result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
@@ -473,7 +419,6 @@ class TehtrisEDRInstaller:
             self.logger.error(f"Error during uninstallation: {e}")
             return False
 
-
     def run_installation(self) -> bool:
         """Run complete installation."""
         self.logger.info("Starting TEHTRIS EDR installation automation")
@@ -481,14 +426,14 @@ class TehtrisEDRInstaller:
         try:
             # Check for existing installation first
             if self.verify_installation(post_install_check=False):
-                if not self.prompt_uninstall_confirmation():
-                    self.logger.info("Installation cancelled by user.")
+                self.logger.warning("Existing TEHTRIS EDR installation detected. Attempting to uninstall...")
+                if not self.uninstall_password and not self.uninstall_key_file:
+                    self.logger.error("Existing installation found, but no uninstall credentials provided.")
                     return False
 
-                # Get uninstall credentials
-                credential_type, credential_value = self.get_uninstall_credentials()
+                credential_type = 'password' if self.uninstall_password else 'keyfile'
+                credential_value = self.uninstall_password if self.uninstall_password else self.uninstall_key_file
 
-                # Uninstall existing EDR
                 if not self.uninstall_existing_edr(credential_type, credential_value):
                     self.logger.error("Failed to uninstall existing TEHTRIS EDR. Cannot proceed with installation.")
                     return False
@@ -528,12 +473,18 @@ class TehtrisEDRInstaller:
 
 def main():
     """Main entry point."""
-    if len(sys.argv) != 2:
-        print("Usage: python tehtris_edr_installer_minimal.py <path_to_msi>")
-        sys.exit(1)
+    parser = argparse.ArgumentParser(description="TEHTRIS EDR Installer")
+    parser.add_argument("msi_path", help="Path to the TEHTRIS EDR MSI installer")
+    parser.add_argument("--uninstall-password", help="Password for uninstalling a previous version")
+    parser.add_argument("--uninstall-key-file", help="Key file for uninstalling a previous version")
 
-    msi_path = sys.argv[1]
-    installer = TehtrisEDRInstaller(msi_path)
+    args = parser.parse_args()
+
+    installer = TehtrisEDRInstaller(
+        msi_path=args.msi_path,
+        uninstall_password=args.uninstall_password,
+        uninstall_key_file=args.uninstall_key_file
+    )
 
     success = installer.run_installation()
     sys.exit(0 if success else 1)

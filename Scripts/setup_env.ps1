@@ -26,7 +26,10 @@ param(
     [string]$InstallEdrMsiPath,
 
     [Parameter(Mandatory=$false)]
-    [switch]$UninstallEdr,
+    [string]$UninstallEdrPassword,
+
+    [Parameter(Mandatory=$false)]
+    [string]$UninstallEdrKeyFile,
 
     [Parameter(Mandatory=$false)]
     [switch]$All
@@ -350,7 +353,11 @@ function Install-Nmap {
 function Invoke-TehtrisEdrInstaller {
     param(
         [Parameter(Mandatory=$true)]
-        [string]$MsiPath
+        [string]$MsiPath,
+        [Parameter(Mandatory=$false)]
+        [string]$UninstallPassword,
+        [Parameter(Mandatory=$false)]
+        [string]$UninstallKeyFile
     )
 
     Write-Log "Invoking TEHTRIS EDR installer..." -Level "INFO"
@@ -365,8 +372,16 @@ function Invoke-TehtrisEdrInstaller {
             throw "TEHTRIS EDR installer script not found at: $pythonScript"
         }
 
-        Write-Log "Executing TEHTRIS EDR installer script..." -Level "INFO"
-        $process = Start-Process -FilePath "python" -ArgumentList "`"$pythonScript`" `"$MsiPath`"" -Wait -PassThru -NoNewWindow
+        $arguments = "`"$MsiPath`""
+        if ($UninstallPassword) {
+            $arguments += " --uninstall-password `"$UninstallPassword`""
+        }
+        if ($UninstallKeyFile) {
+            $arguments += " --uninstall-key-file `"$UninstallKeyFile`""
+        }
+
+        Write-Log "Executing TEHTRIS EDR installer script with arguments: $arguments" -Level "INFO"
+        $process = Start-Process -FilePath "python" -ArgumentList "`"$pythonScript`" $arguments" -Wait -PassThru -NoNewWindow
 
         if ($process.ExitCode -eq 0) {
             Write-Log "TEHTRIS EDR installer executed successfully." -Level "SUCCESS"
@@ -426,41 +441,38 @@ function Invoke-TehtrisEdrUninstaller {
 #endregion
 
 function Invoke-EdrInstallation {
+    param(
+        [Parameter(Mandatory=$true)]
+        [string]$MsiPath,
+        [Parameter(Mandatory=$false)]
+        [string]$UninstallPassword,
+        [Parameter(Mandatory=$false)]
+        [string]$UninstallKeyFile
+    )
+
     Write-Section "TEHTRIS EDR INSTALLATION"
-    if (-not ([string]::IsNullOrEmpty($InstallEdrMsiPath))) {
-        Invoke-TehtrisEdrInstaller -MsiPath $InstallEdrMsiPath
-    } else {
-        Write-Log "The -InstallEdrMsiPath parameter is required to install the EDR." -Level "ERROR"
-        return $false
+
+    $installerArgs = @{
+        MsiPath = $MsiPath
     }
+    if ($UninstallPassword) {
+        $installerArgs['UninstallPassword'] = $UninstallPassword
+    }
+    if ($UninstallKeyFile) {
+        $installerArgs['UninstallKeyFile'] = $UninstallKeyFile
+    }
+    Invoke-TehtrisEdrInstaller @installerArgs
 }
 
 function Invoke-EdrUninstallation {
     Write-Section "TEHTRIS EDR UNINSTALLATION"
 
-    try {
-        Write-Host "To uninstall TEHTRIS EDR, you need to provide either:"
-        Write-Host "1. Uninstall password"
-        Write-Host "2. Path to uninstall key file"
-        Write-Host
-
-        $choice = Read-Host -Prompt "Enter '1' for password or '2' for key file"
-
-        if ($choice -eq '1') {
-            $password = Read-Host -Prompt "Enter uninstall password"
-            Invoke-TehtrisEdrUninstaller -Password $password
-        } elseif ($choice -eq '2') {
-            $keyFilePath = Read-Host -Prompt "Enter path to uninstall key file"
-            Invoke-TehtrisEdrUninstaller -KeyFilePath $keyFilePath
-        } else {
-            Write-Log "Invalid choice. Please enter '1' or '2'." -Level "ERROR"
-            return $false
-        }
-
-        return $true
-    }
-    catch {
-        Write-Log "Error during EDR uninstallation: $($_.Exception.Message)" -Level "ERROR"
+    if ($PSBoundParameters.ContainsKey('UninstallEdrPassword')) {
+        Invoke-TehtrisEdrUninstaller -Password $UninstallEdrPassword
+    } elseif ($PSBoundParameters.ContainsKey('UninstallEdrKeyFile')) {
+        Invoke-TehtrisEdrUninstaller -KeyFilePath $UninstallEdrKeyFile
+    } else {
+        Write-Log "Either -UninstallEdrPassword or -UninstallEdrKeyFile must be provided." -Level "ERROR"
         return $false
     }
 }
@@ -533,7 +545,7 @@ try {
         Set-WindowsFirewall -Disable $true
         Invoke-ToolDeployment
         if ($PSBoundParameters.ContainsKey('InstallEdrMsiPath')) {
-            Invoke-EdrInstallation
+            Invoke-EdrInstallation -MsiPath $InstallEdrMsiPath -UninstallPassword $UninstallEdrPassword -UninstallKeyFile $UninstallEdrKeyFile
         } else {
             Write-Log "-InstallEdrMsiPath not provided with -All switch. Skipping EDR installation." -Level "INFO"
         }
@@ -557,11 +569,12 @@ try {
         }
         if ($PSBoundParameters.ContainsKey('InstallEdrMsiPath')) {
             Write-Log "Processing -InstallEdrMsiPath parameter..." -Level "INFO"
-            Invoke-EdrInstallation
+            Invoke-EdrInstallation -MsiPath $InstallEdrMsiPath -UninstallPassword $UninstallEdrPassword -UninstallKeyFile $UninstallEdrKeyFile
         }
-        if ($UninstallEdr.IsPresent) {
-            Write-Log "Processing -UninstallEdr parameter..." -Level "INFO"
-            Invoke-EdrUninstallation
+        if ($PSBoundParameters.ContainsKey('UninstallEdrPassword') -or $PSBoundParameters.ContainsKey('UninstallEdrKeyFile')) {
+            if (-not $PSBoundParameters.ContainsKey('InstallEdrMsiPath')) {
+                Invoke-EdrUninstallation
+            }
         }
     }
 

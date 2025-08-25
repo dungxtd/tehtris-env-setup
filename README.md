@@ -28,24 +28,26 @@ The `setup_env.ps1` script is designed to be modular. You can perform specific a
     *   `$false` (default): Enables the security features.
 *   `-InstallTools`: A switch to install the security tools (Mimikatz and Nmap).
 *   `-InstallEdrMsiPath <path>`: Specifies the path to the TEHTRIS EDR MSI file to begin the installation.
-*   `-UninstallEdr`: A switch to start the EDR uninstallation process.
+*   `-UninstallEdrPassword <password>`: The password for uninstalling the EDR.
+*   `-UninstallEdrKeyFile <path>`: The path to the key file for uninstalling the EDR.
 *   `-All`: A switch to perform a full setup. This will disable security features, install all tools, and install the EDR if the `-InstallEdrMsiPath` is also provided.
 
 **Examples**:
 
 1.  **Full Setup (Disable Security, Install Tools, and Install EDR)**:
     ```powershell
-    powershell.exe -ExecutionPolicy Bypass -File .\setup_env.ps1 -All -InstallEdrMsiPath "C:\path\to\tehtris.msi"
+    # If a previous version needs to be uninstalled, provide the credentials.
+    powershell.exe -ExecutionPolicy Bypass -File .\setup_env.ps1 -All -InstallEdrMsiPath "C:\path\to\tehtris.msi" -UninstallEdrPassword "your_password"
     ```
 
 2.  **Disable Security Features Only**:
     ```powershell
-    powershell.exe -ExecutionPolicy Bypass -File .\setup_env.ps1 -DisableSec $true
+    powershell.exe -ExecutionPolicy Bypass -File .\setup_env.ps1 -DisableSec
     ```
 
 3.  **Enable Security Features Only**:
     ```powershell
-    powershell.exe -ExecutionPolicy Bypass -File .\setup_env.ps1 -DisableSec $false
+    powershell.exe -ExecutionPolicy Bypass -File .\setup_env.ps1 -EnableSec
     ```
 
 4.  **Install Tools Only**:
@@ -53,14 +55,19 @@ The `setup_env.ps1` script is designed to be modular. You can perform specific a
     powershell.exe -ExecutionPolicy Bypass -File .\setup_env.ps1 -InstallTools
     ```
 
-5.  **Install TEHTRIS EDR Only**:
+5.  **Install TEHTRIS EDR (with uninstallation of previous version)**:
     ```powershell
-    powershell.exe -ExecutionPolicy Bypass -File .\setup_env.ps1 -InstallEdrMsiPath "C:\path\to\tehtris.msi"
+    powershell.exe -ExecutionPolicy Bypass -File .\setup_env.ps1 -InstallEdrMsiPath "C:\path\to\tehtris.msi" -UninstallEdrPassword "your_password"
     ```
 
-6.  **Uninstall TEHTRIS EDR**:
+6.  **Uninstall TEHTRIS EDR (using a password)**:
     ```powershell
-    powershell.exe -ExecutionPolicy Bypass -File .\setup_env.ps1 -UninstallEdr
+    powershell.exe -ExecutionPolicy Bypass -File .\setup_env.ps1 -UninstallEdrPassword "your_password"
+    ```
+
+7.  **Uninstall TEHTRIS EDR (using a key file)**:
+    ```powershell
+    powershell.exe -ExecutionPolicy Bypass -File .\setup_env.ps1 -UninstallEdrKeyFile "C:\path\to\keyfile.key"
     ```
 
 ## Logging
