@@ -545,6 +545,12 @@ Write-Section "STARTING SECURITY ENVIRONMENT SETUP"
 try {
     Initialize-Environment
 
+    # If no parameters are provided, default to -All
+    if ($PSBoundParameters.Count -eq 0) {
+        Write-Log "No parameters provided. Defaulting to '-All' for a full setup." -Level "INFO"
+        $All = $true
+    }
+
     if ($All) {
         Write-Log "'-All' switch specified. Running full setup..." -Level "INFO"
         Write-Section "SECURITY CONFIGURATION"
