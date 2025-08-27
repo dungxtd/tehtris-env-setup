@@ -8,6 +8,7 @@ import sys
 import time
 import logging
 import subprocess
+import re
 from pathlib import Path
 
 try:
@@ -25,6 +26,10 @@ class TehtrisEDRUninstaller:
         self.password = password
         self.key_file = Path(key_file) if key_file else None
         self.logger = self._setup_logging()
+        
+        # Detect EDR version from installed software
+        self.edr_version = self._detect_installed_edr_version()
+        self.logger.info(f"[DETECTED] EDR version: {self.edr_version}")
 
     def _setup_logging(self) -> logging.Logger:
         """Setup logging."""
@@ -48,21 +53,116 @@ class TehtrisEDRUninstaller:
 
         return logger
 
+    def _detect_installed_edr_version(self) -> str:
+        """Detect installed EDR version from registry."""
+        try:
+            import winreg
+            
+            uninstall_key_path = r"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall"
+            
+            # Try 64-bit and 32-bit registry views
+            for access_right in [winreg.KEY_WOW64_64KEY, winreg.KEY_WOW64_32KEY]:
+                try:
+                    with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, uninstall_key_path, 0, winreg.KEY_READ | access_right) as key:
+                        for i in range(winreg.QueryInfoKey(key)[0]):
+                            subkey_name = winreg.EnumKey(key, i)
+                            with winreg.OpenKey(key, subkey_name) as subkey:
+                                try:
+                                    display_name = winreg.QueryValueEx(subkey, "DisplayName")[0]
+                                    if "tehtris edr" in display_name.lower():
+                                        # Try to get version from DisplayVersion
+                                        try:
+                                            version = winreg.QueryValueEx(subkey, "DisplayVersion")[0]
+                                            # Extract version using regex pattern
+                                            version_pattern = r'(\d+)\.(\d+)\.(\d+)'
+                                            match = re.search(version_pattern, version)
+                                            if match:
+                                                return f"{match.group(1)}.{match.group(2)}.{match.group(3)}"
+                                            elif version.startswith('1.'):
+                                                return "1.x.x"
+                                            elif version.startswith('2.'):
+                                                return "2.x.x"
+                                        except OSError:
+                                            pass
+                                        
+                                        # Fallback: detect from display name
+                                        if "1." in display_name or "v1" in display_name.lower():
+                                            return "1.x.x"
+                                        elif "2." in display_name or "v2" in display_name.lower():
+                                            return "2.x.x"
+                                        
+                                        # Default assumption
+                                        return "2.x.x"
+                                except OSError:
+                                    continue
+                except FileNotFoundError:
+                    continue
+            
+            # Default if no TEHTRIS EDR found
+            return "2.x.x"
+            
+        except Exception as e:
+            self.logger.warning(f"Could not detect EDR version: {e}")
+            return "2.x.x"
+
+    def _add_silent_flags_v1(self, uninstall_string: str) -> str:
+        """Add silent flags to V1 uninstall command to avoid confirmation dialogs."""
+        self.logger.info(f"[V1] Original uninstall command: {uninstall_string}")
+        
+        # Check if it's an MSI uninstall command (msiexec)
+        if "msiexec" in uninstall_string.lower():
+            # For MSI, add silent flags
+            silent_flags = " /quiet /norestart"
+            if "/quiet" not in uninstall_string.lower():
+                silent_command = uninstall_string + silent_flags
+                self.logger.info(f"[V1] Added MSI silent flags: {silent_flags}")
+            else:
+                silent_command = uninstall_string
+                self.logger.info(f"[V1] MSI silent flags already present")
+        else:
+            # For EXE uninstaller, try common silent flags
+            silent_flags = [" /S", " /SILENT", " /VERYSILENT", " /q", " /quiet"]
+            silent_command = uninstall_string
+            
+            # Add flags that aren't already present
+            for flag in silent_flags:
+                if flag.lower().strip() not in uninstall_string.lower():
+                    silent_command += flag
+            
+            # Add additional flags to suppress dialogs
+            if "/SUPPRESSMSGBOXES" not in silent_command:
+                silent_command += " /SUPPRESSMSGBOXES"
+            if "/NORESTART" not in silent_command:
+                silent_command += " /NORESTART"
+            
+            self.logger.info(f"[V1] Added EXE silent flags")
+        
+        self.logger.info(f"[V1] Final silent command: {silent_command}")
+        return silent_command
+
     def validate_prerequisites(self) -> bool:
         """Validate prerequisites."""
-        self.logger.info("Validating prerequisites...")
+        self.logger.info(f"[{self.edr_version}] Validating prerequisites...")
 
+        # For V1, fully automated - no credentials needed
+        if self.edr_version.startswith('1.'):
+            self.logger.info("[V1] Fully automated uninstall - credentials not required")
+            if self.password or self.key_file:
+                self.logger.info("[V1] Credentials provided but not needed for automated V1 uninstall")
+            if self.key_file and not self.key_file.exists():
+                self.logger.error(f"[V1] Key file not found: {self.key_file}")
+                return False
+        else:
+            # For V2, password or key file is required
+            if not self.password and not self.key_file:
+                self.logger.error("[V2] Either password or key file must be provided for V2")
+                return False
 
+            if self.key_file and not self.key_file.exists():
+                self.logger.error(f"[V2] Key file not found: {self.key_file}")
+                return False
 
-        if not self.password and not self.key_file:
-            self.logger.error("Either password or key file must be provided")
-            return False
-
-        if self.key_file and not self.key_file.exists():
-            self.logger.error(f"Key file not found: {self.key_file}")
-            return False
-
-        self.logger.info("Prerequisites validated successfully")
+        self.logger.info(f"[{self.edr_version}] Prerequisites validated successfully")
         return True
 
 
@@ -73,22 +173,24 @@ class TehtrisEDRUninstaller:
             import win32gui
             import win32con
 
-            self.logger.info(f"Looking for button: {button_text}")
+            self.logger.info(f"[{self.edr_version}] Looking for button: {button_text}")
 
-            # Find TEHTRIS windows
+            # Find TEHTRIS windows - check for both setup and simple dialogs
             tehtris_windows = []
             def find_windows(hwnd, windows):
                 try:
                     if win32gui.IsWindowVisible(hwnd):
                         window_text = win32gui.GetWindowText(hwnd)
-                        if "TEHTRIS EDR Setup" in window_text:
+                        # V1 might have simple "TEHTRIS EDR" dialog, V2 has "TEHTRIS EDR Setup"
+                        if ("TEHTRIS EDR Setup" in window_text or 
+                            ("TEHTRIS EDR" in window_text and self.edr_version.startswith('1.'))):
                             windows.append(hwnd)
                 except:
                     pass
                 return True
 
             win32gui.EnumWindows(find_windows, tehtris_windows)
-            self.logger.info(f"Found {len(tehtris_windows)} TEHTRIS windows")
+            self.logger.info(f"[{self.edr_version}] Found {len(tehtris_windows)} TEHTRIS windows")
 
             # Search for button
             for tehtris_hwnd in tehtris_windows:
@@ -117,18 +219,18 @@ class TehtrisEDRUninstaller:
                     if button_info.get('hwnd'):
                         win32gui.SendMessage(button_info['hwnd'], win32con.WM_LBUTTONDOWN, 0, 0)
                         win32gui.SendMessage(button_info['hwnd'], win32con.WM_LBUTTONUP, 0, 0)
-                        self.logger.info(f"Clicked button: {button_info['text']}")
+                        self.logger.info(f"[{self.edr_version}] Clicked button: {button_info['text']}")
                         return True
 
                 except Exception as e:
                     self.logger.debug(f"Error in window {tehtris_hwnd}: {e}")
                     continue
 
-            self.logger.error(f"Button '{button_text}' not found")
+            self.logger.error(f"[{self.edr_version}] Button '{button_text}' not found")
             return False
 
         except Exception as e:
-            self.logger.error(f"win32gui click failed: {e}")
+            self.logger.error(f"[{self.edr_version}] win32gui click failed: {e}")
             return False
 
     def click_radio_button(self, radio_text: str) -> bool:
@@ -329,13 +431,13 @@ class TehtrisEDRUninstaller:
             return False
 
     def find_and_launch_uninstaller(self) -> bool:
-        """Find and launch the TEHTRIS EDR uninstaller."""
-        self.logger.info("Step 1: Finding and launching uninstaller...")
+        """Find and launch the TEHTRIS EDR uninstaller using standard Windows method."""
+        self.logger.info(f"[{self.edr_version}] Step 1: Finding and launching uninstaller...")
         try:
             import winreg
 
             uninstall_key_path = r"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall"
-            uninstall_command = None
+            uninstall_info = None
 
             # Try 64-bit and 32-bit registry views
             for access_right in [winreg.KEY_WOW64_64KEY, winreg.KEY_WOW64_32KEY]:
@@ -347,42 +449,102 @@ class TehtrisEDRUninstaller:
                                 try:
                                     display_name = winreg.QueryValueEx(subkey, "DisplayName")[0]
                                     if "tehtris edr" in display_name.lower():
-                                        uninstall_command = winreg.QueryValueEx(subkey, "UninstallString")[0]
-                                        self.logger.info(f"Found uninstaller: {display_name}")
-                                        break
+                                        try:
+                                            uninstall_string = winreg.QueryValueEx(subkey, "UninstallString")[0]
+                                            
+                                            # Version-based uninstall logic (ignore MSI/EXE detection)
+                                            if self.edr_version.startswith('1.'):
+                                                # V1: Add silent flags to avoid confirmation dialogs
+                                                silent_command = self._add_silent_flags_v1(uninstall_string)
+                                                uninstall_info = {
+                                                    'version': 'v1',
+                                                    'command': silent_command,
+                                                    'original_command': uninstall_string,
+                                                    'display_name': display_name
+                                                }
+                                            else:
+                                                # V2: Always use MSI uninstall method
+                                                import re
+                                                product_code_match = re.search(r'{[A-F0-9\-]+}', uninstall_string)
+                                                if product_code_match:
+                                                    product_code = product_code_match.group(0)
+                                                    uninstall_info = {
+                                                        'version': 'v2',
+                                                        'product_code': product_code,
+                                                        'display_name': display_name,
+                                                        'command': f'msiexec /x {product_code}'
+                                                    }
+                                                else:
+                                                    # Fallback: use direct uninstall string for V2
+                                                    uninstall_info = {
+                                                        'version': 'v2',
+                                                        'command': uninstall_string,
+                                                        'display_name': display_name
+                                                    }
+                                            break
+                                        except OSError:
+                                            continue
                                 except OSError:
                                     continue
-                    if uninstall_command:
-                        break
+                    if uninstall_info:
+                                        break
                 except FileNotFoundError:
                     continue
 
-            if not uninstall_command:
-                self.logger.error("TEHTRIS EDR uninstaller not found in registry.")
+            if not uninstall_info:
+                self.logger.error(f"[{self.edr_version}] TEHTRIS EDR uninstaller not found in registry.")
                 return False
 
-            # The command from the registry should launch the maintenance wizard.
+            self.logger.info(f"[{self.edr_version}] Found uninstaller: {uninstall_info['display_name']}")
+            self.logger.info(f"[{self.edr_version}] Uninstaller version: {uninstall_info['version']}")
 
-            self.logger.info(f"Launching command: {uninstall_command}")
-            subprocess.Popen(uninstall_command, shell=True)
+            # Launch the appropriate uninstall command based on version
+            command = uninstall_info['command']
+            if uninstall_info['version'] == 'v1':
+                self.logger.info(f"[V1] Launching silent uninstall: {command}")
+                # For V1 silent uninstall, capture output and wait for completion
+                try:
+                    result = subprocess.run(command, shell=True, capture_output=True, text=True, timeout=300)
+                    self.uninstall_result = {
+                        'returncode': result.returncode,
+                        'stdout': result.stdout,
+                        'stderr': result.stderr,
+                        'command': command
+                    }
+                    self.logger.info(f"[V1] Uninstall command completed with exit code: {result.returncode}")
+                    if result.stdout:
+                        self.logger.info(f"[V1] Output: {result.stdout}")
+                    if result.stderr:
+                        self.logger.warning(f"[V1] Error output: {result.stderr}")
+                    return True
+                except subprocess.TimeoutExpired:
+                    self.logger.error(f"[V1] Uninstall command timed out after 5 minutes")
+                    return False
+                except Exception as e:
+                    self.logger.error(f"[V1] Failed to execute uninstall command: {e}")
+                    return False
+            else:
+                self.logger.info(f"[V2] Launching MSI uninstall: {command}")
+                subprocess.Popen(command, shell=True)
+
             time.sleep(5)
 
             # Wait for the TEHTRIS EDR Setup window to appear
-            self.logger.info("Waiting for TEHTRIS EDR Setup window to appear...")
+            self.logger.info(f"[{self.edr_version}] Waiting for TEHTRIS EDR Setup window to appear...")
             setup_window_timeout = 30  # 30 seconds
             start_time = time.time()
 
             while time.time() - start_time < setup_window_timeout:
                 if self._check_tehtris_window_exists():
-                    self.logger.info("TEHTRIS EDR Setup window detected - Uninstaller launched successfully")
+                    self.logger.info(f"[{self.edr_version}] TEHTRIS EDR Setup window detected - Uninstaller launched successfully")
                     return True
                 time.sleep(1)
 
-            self.logger.error("TEHTRIS EDR Setup window did not appear within timeout")
+            self.logger.error(f"[{self.edr_version}] TEHTRIS EDR Setup window did not appear within timeout")
             return False
 
         except Exception as e:
-            self.logger.error(f"Failed to launch uninstaller: {e}")
+            self.logger.error(f"[{self.edr_version}] Failed to launch uninstaller: {e}")
             return False
 
     def _check_tehtris_window_exists(self) -> bool:
@@ -524,26 +686,39 @@ class TehtrisEDRUninstaller:
             return False
 
     def handle_welcome_screen(self) -> bool:
-        """Handle welcome screen."""
-        self.logger.info("Step 2: Handling welcome screen...")
-        time.sleep(1)
-        return self.click_with_win32gui("Next")
+        """Handle welcome screen or initial dialog."""
+        if self.edr_version.startswith('1.'):
+            self.logger.info(f"[V1] Step 2: Handling initial TEHTRIS EDR dialog...")
+            # V1 may have a simple dialog with title "TEHTRIS EDR" -> click OK
+            time.sleep(1)
+            if self.click_with_win32gui("OK"):
+                self.logger.info(f"[V1] Successfully clicked OK on initial dialog")
+                time.sleep(1)
+                # After OK, proceed with Next if there's a welcome screen
+                return self.click_with_win32gui("Next")
+            else:
+                # Maybe no initial dialog, try Next directly
+                return self.click_with_win32gui("Next")
+        else:
+            self.logger.info(f"[V2] Step 2: Handling welcome screen...")
+            time.sleep(1)
+            return self.click_with_win32gui("Next")
 
     def handle_verification_screen(self) -> bool:
         """Handle verification screen."""
-        self.logger.info("Step 3: Handling verification...")
+        self.logger.info(f"[{self.edr_version}] Step 3: Handling verification...")
         time.sleep(1)
 
         if self.password:
-            self.logger.info("Using password verification.")
+            self.logger.info(f"[{self.edr_version}] Using password verification.")
             if not self.click_radio_button("Enter password"):
-                 self.logger.warning("Could not select 'Enter password' radio. Assuming it's default.")
+                 self.logger.warning(f"[{self.edr_version}] Could not select 'Enter password' radio. Assuming it's default.")
             time.sleep(0.5)
             if not self.fill_password_field(self.password):
                 return False
 
         elif self.key_file:
-            self.logger.info("Using key file verification.")
+            self.logger.info(f"[{self.edr_version}] Using key file verification.")
             if not self.click_radio_button("Use key file"):
                 return False
             time.sleep(0.5)
@@ -555,7 +730,7 @@ class TehtrisEDRUninstaller:
 
     def handle_remove_screen(self) -> bool:
         """Handle remove screen with fallback."""
-        self.logger.info("Step 4: Confirming removal...")
+        self.logger.info(f"[{self.edr_version}] Step 4: Confirming removal...")
         time.sleep(1)
 
         # Try clicking the Remove button directly
@@ -579,7 +754,7 @@ class TehtrisEDRUninstaller:
 
     def wait_for_completion(self) -> bool:
         """Wait for uninstallation to complete, checking for errors."""
-        self.logger.info("Step 5: Waiting for uninstallation completion...")
+        self.logger.info(f"[{self.edr_version}] Step 5: Waiting for uninstallation completion...")
 
         completion_timeout = 300  # 5 minutes
         start_time = time.time()
@@ -606,7 +781,7 @@ class TehtrisEDRUninstaller:
 
     def run_uninstallation(self) -> bool:
         """Run complete uninstallation process."""
-        self.logger.info("Starting TEHTRIS EDR uninstallation automation")
+        self.logger.info(f"[{self.edr_version}] Starting TEHTRIS EDR uninstallation automation")
 
         try:
             if not self.validate_prerequisites():
@@ -615,6 +790,12 @@ class TehtrisEDRUninstaller:
 
             if not self.find_and_launch_uninstaller():
                 return False
+
+            # For V1, the command already completed - no UI handling needed
+            if self.edr_version.startswith('1.'):
+                return self._verify_v1_uninstall_result()
+
+            # For V2 only, use GUI automation
             time.sleep(0.5)
 
             # Center the uninstaller window
@@ -637,24 +818,106 @@ class TehtrisEDRUninstaller:
             if not self.wait_for_completion():
                 return False
 
-            self.logger.info("TEHTRIS EDR uninstallation completed successfully!")
+            self.logger.info(f"[{self.edr_version}] TEHTRIS EDR uninstallation completed successfully!")
             return True
 
         except Exception as e:
-            self.logger.error(f"Uninstallation failed: {e}")
+            self.logger.error(f"[{self.edr_version}] Uninstallation failed: {e}")
+            return False
+
+    def _verify_v1_uninstall_result(self) -> bool:
+        """Verify V1 uninstall result based on command output and simple checks."""
+        if not hasattr(self, 'uninstall_result'):
+            self.logger.error("[V1] No uninstall result available")
+            return False
+        
+        result = self.uninstall_result
+        self.logger.info(f"[V1] Verifying uninstall result...")
+        self.logger.info(f"[V1] Command: {result['command']}")
+        self.logger.info(f"[V1] Exit code: {result['returncode']}")
+        
+        # Check exit code first
+        if result['returncode'] == 0:
+            self.logger.info("[V1] Command exit code indicates success (0)")
+            success_by_exitcode = True
+        else:
+            self.logger.warning(f"[V1] Command exit code indicates potential issue ({result['returncode']})")
+            success_by_exitcode = False
+        
+        # Additional verification: check if dasc.exe process is still running
+        time.sleep(3)  # Wait a moment for cleanup
+        processes_stopped = self._check_processes_stopped()
+        
+        self.logger.info(f"[V1] Final verification:")
+        self.logger.info(f"[V1] - Exit code success: {success_by_exitcode}")
+        self.logger.info(f"[V1] - Processes stopped: {processes_stopped}")
+        
+        # Consider successful if either:
+        # 1. Exit code is 0 (command succeeded), OR
+        # 2. Processes stopped (uninstall actually worked even if exit code was non-zero)
+        if success_by_exitcode or processes_stopped:
+            self.logger.info("[V1] Uninstall verification successful!")
+            return True
+        else:
+            self.logger.error("[V1] Uninstall verification failed - both exit code and process check failed")
+            return False
+    
+    def _check_processes_stopped(self) -> bool:
+        """Simple check if TEHTRIS processes have stopped."""
+        try:
+            import psutil
+            for proc in psutil.process_iter(['name']):
+                if proc.info['name'].lower() == 'dasc.exe':
+                    self.logger.info("[V1] TEHTRIS process still running")
+                    return False
+            self.logger.info("[V1] No TEHTRIS processes found - stopped successfully")
+            return True
+        except Exception as e:
+            self.logger.debug(f"[V1] Error checking processes: {e}")
             return False
 
 def main():
     """Main entry point."""
     import argparse
-    parser = argparse.ArgumentParser(description="TEHTRIS EDR Uninstaller")
-    group = parser.add_mutually_exclusive_group(required=True)
-    group.add_argument("-p", "--password", help="Uninstallation password")
-    group.add_argument("-k", "--keyfile", help="Path to the uninstallation key file")
+    parser = argparse.ArgumentParser(
+        description="TEHTRIS EDR Uninstaller",
+        epilog="""
+Note: For V1 installations, password/keyfile is optional.
+For V2 installations, either password or keyfile is required.
+
+Examples:
+  # V1 uninstall (no credentials needed)
+  python tehtris_edr_uninstaller.py
+  
+  # V2 uninstall with password
+  python tehtris_edr_uninstaller.py -p "password123"
+  
+  # V2 uninstall with keyfile
+  python tehtris_edr_uninstaller.py -k "path/to/keyfile.key"
+        """,
+        formatter_class=argparse.RawDescriptionHelpFormatter
+    )
+    group = parser.add_mutually_exclusive_group(required=False)  # Made optional
+    group.add_argument("-p", "--password", help="Uninstallation password (required for V2, optional for V1)")
+    group.add_argument("-k", "--keyfile", help="Path to the uninstallation key file (required for V2, optional for V1)")
 
     args = parser.parse_args()
 
+    # Create uninstaller instance
     uninstaller = TehtrisEDRUninstaller(password=args.password, key_file=args.keyfile)
+    
+    # Show detected version and requirements
+    print(f"Detected EDR version: {uninstaller.edr_version}")
+    if uninstaller.edr_version.startswith('1.'):
+        print("[V1] Fully automated uninstall - no UI interaction needed")
+        if args.password or args.keyfile:
+            print("[V1] Note: Credentials provided but not needed for V1")
+    else:
+        print("[V2] Password or keyfile is required for V2")
+        if not args.password and not args.keyfile:
+            print("ERROR: V2 requires either password (-p) or keyfile (-k)")
+            sys.exit(1)
+    
     success = uninstaller.run_uninstallation()
     sys.exit(0 if success else 1)
 

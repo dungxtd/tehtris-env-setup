@@ -6,10 +6,27 @@
 .DESCRIPTION
     Automates the setup of a security testing environment with proper logging and error handling.
     Temporarily disables security features, installs tools, and provides cleanup functionality.
+.PARAMETER InstallEdrV1
+    Install TEHTRIS EDR V1 using default installer name: TEHTRIS_EDR_1.8.1_rc2.exe
+.PARAMETER InstallEdrV2  
+    Install TEHTRIS EDR V2 using default installer name: TEHTRIS_EDR_2.0.0_Windows_x86_64_MS-28.msi
+.PARAMETER InstallEdrPath
+    Install TEHTRIS EDR using a custom installer path
+.EXAMPLE
+    .\setup_env.ps1 -InstallEdrV1
+    Installs TEHTRIS EDR V1 using the default V1 installer
+.EXAMPLE
+    .\setup_env.ps1 -InstallEdrV2 -UninstallEdrPassword "password123"
+    Installs TEHTRIS EDR V2 and provides uninstall password for removing existing installations
 .NOTES
     Author: Cascade AI Assistant
     Created: 2025-08-25
+    Updated: 2025-08-27 (Added V1/V2 default parameters)
     Requires: Administrator privileges
+    
+    Default installer locations (in Tools directory):
+    - V1: TEHTRIS_EDR_1.8.1_rc2.exe
+    - V2: TEHTRIS_EDR_2.0.0_Windows_x86_64_MS-28.msi
 #>
 
 param(
@@ -23,7 +40,13 @@ param(
     [switch]$InstallTools,
 
     [Parameter(Mandatory=$false)]
-    [string]$InstallEdrMsiPath,
+    [string]$InstallEdrPath,
+
+    [Parameter(Mandatory=$false)]
+    [switch]$InstallEdrV1,
+
+    [Parameter(Mandatory=$false)]
+    [switch]$InstallEdrV2,
 
     [Parameter(Mandatory=$false)]
     [string]$UninstallEdrPassword,
@@ -381,31 +404,61 @@ function Get-EdrVersionFromPath {
 }
 
 function Get-DefaultEdrPath {
-    Write-Log "Determining default EDR installer path..." -Level "INFO"
+    param(
+        [Parameter(Mandatory=$false)]
+        [string]$Version = "auto"
+    )
 
-    # Check for version 1.8.1 first
-    $v1Path = Join-Path $Global:ToolsDir "TEHTRIS_EDR_1.8.1_rc2.exe"
-    if (Test-Path $v1Path) {
-        Write-Log "Found version 1.x.x installer: $v1Path" -Level "INFO"
+    Write-Log "Determining default EDR installer path for version: $Version" -Level "INFO"
+
+    # Define default installer names
+    $v1DefaultName = "TEHTRIS_EDR_1.8.1_rc2.exe"
+    $v2DefaultName = "TEHTRIS_EDR_2.0.0_Windows_x86_64_MS-28.msi"
+    
+    $v1Path = Join-Path $Global:ToolsDir $v1DefaultName
+    $v2Path = Join-Path $Global:ToolsDir $v2DefaultName
+
+    if ($Version -eq "v1" -or $Version -eq "1") {
+        Write-Log "[V1 DEFAULT] Using V1 installer: $v1DefaultName" -Level "INFO"
         return $v1Path
     }
-
-    # Check for version 2.0.0
-    $v2Path = Join-Path $Global:ToolsDir "TEHTRIS_EDR_2.0.0_Windows_x86_64_MS-28.msi"
-    if (Test-Path $v2Path) {
-        Write-Log "Found version 2.x.x installer: $v2Path" -Level "INFO"
+    elseif ($Version -eq "v2" -or $Version -eq "2") {
+        Write-Log "[V2 DEFAULT] Using V2 installer: $v2DefaultName" -Level "INFO"
         return $v2Path
     }
+    else {
+        # Auto-detect: Check for version 1.8.1 first
+        if (Test-Path $v1Path) {
+            Write-Log "[AUTO-DETECT] Found V1 installer: $v1Path" -Level "INFO"
+            return $v1Path
+        }
 
-    # Return default v2 path even if file doesn't exist (for error handling)
-    Write-Log "No EDR installer found, returning default v2 path" -Level "WARN"
-    return $v2Path
+        # Check for version 2.0.0
+        if (Test-Path $v2Path) {
+            Write-Log "[AUTO-DETECT] Found V2 installer: $v2Path" -Level "INFO"
+            return $v2Path
+        }
+
+        # Return default v2 path even if file doesn't exist (for error handling)
+        Write-Log "[AUTO-DETECT] No EDR installer found, returning default V2 path: $v2DefaultName" -Level "WARN"
+        return $v2Path
+    }
+}
+
+function Get-DefaultEdrV1Path {
+    Write-Log "[V1] Getting default V1 installer path..." -Level "INFO"
+    return Get-DefaultEdrPath -Version "v1"
+}
+
+function Get-DefaultEdrV2Path {
+    Write-Log "[V2] Getting default V2 installer path..." -Level "INFO"
+    return Get-DefaultEdrPath -Version "v2"
 }
 
 function Invoke-TehtrisEdrInstaller {
     param(
         [Parameter(Mandatory=$true)]
-        [string]$MsiPath,
+        [string]$InstallerPath,
         [Parameter(Mandatory=$false)]
         [string]$UninstallPassword,
         [Parameter(Mandatory=$false)]
@@ -415,12 +468,12 @@ function Invoke-TehtrisEdrInstaller {
     Write-Log "Invoking TEHTRIS EDR installer..." -Level "INFO"
 
     # Detect and log EDR version
-    $edrVersion = Get-EdrVersionFromPath -FilePath $MsiPath
+    $edrVersion = Get-EdrVersionFromPath -FilePath $InstallerPath
     Write-Log "EDR Version detected: $edrVersion" -Level "INFO"
 
     try {
-        if (!(Test-Path $MsiPath)) {
-            throw "MSI file not found at path: $MsiPath"
+        if (!(Test-Path $InstallerPath)) {
+            throw "Installer file not found at path: $InstallerPath"
         }
 
         $pythonScript = Join-Path $Global:ScriptsDir "tehtris_edr_installer_minimal.py"
@@ -428,7 +481,7 @@ function Invoke-TehtrisEdrInstaller {
             throw "TEHTRIS EDR installer script not found at: $pythonScript"
         }
 
-        $arguments = "`"$MsiPath`""
+        $arguments = "`"$InstallerPath`""
         if ($UninstallPassword) {
             $arguments += " --uninstall-password `"$UninstallPassword`""
         }
@@ -499,7 +552,7 @@ function Invoke-TehtrisEdrUninstaller {
 function Invoke-EdrInstallation {
     param(
         [Parameter(Mandatory=$true)]
-        [string]$MsiPath,
+        [string]$InstallerPath,
         [Parameter(Mandatory=$false)]
         [string]$UninstallPassword,
         [Parameter(Mandatory=$false)]
@@ -509,7 +562,7 @@ function Invoke-EdrInstallation {
     Write-Section "TEHTRIS EDR INSTALLATION"
 
     $installerArgs = @{
-        MsiPath = $MsiPath
+        InstallerPath = $InstallerPath
     }
     if ($UninstallPassword) {
         $installerArgs['UninstallPassword'] = $UninstallPassword
@@ -613,13 +666,13 @@ try {
         Set-WindowsDefender -Disable $true
         Set-WindowsFirewall -Disable $true
         Invoke-ToolDeployment
-        $msiPathToInstall = if ($PSBoundParameters.ContainsKey('InstallEdrMsiPath')) {
-            $InstallEdrMsiPath
+        $installerPathToInstall = if ($PSBoundParameters.ContainsKey('InstallEdrPath')) {
+            $InstallEdrPath
         } else {
-            Write-Log "-InstallEdrMsiPath not provided with -All switch. Using default EDR installer." -Level "INFO"
+            Write-Log "-InstallEdrPath not provided with -All switch. Using default EDR installer." -Level "INFO"
             Get-DefaultEdrPath
         }
-        Invoke-EdrInstallation -MsiPath $msiPathToInstall -UninstallPassword $UninstallEdrPassword -UninstallKeyFile $UninstallEdrKeyFile
+        Invoke-EdrInstallation -InstallerPath $installerPathToInstall -UninstallPassword $UninstallEdrPassword -UninstallKeyFile $UninstallEdrKeyFile
     } else {
         # Individual actions
         if ($DisableSec.IsPresent) {
@@ -638,12 +691,22 @@ try {
             Write-Log "Processing -InstallTools parameter..." -Level "INFO"
             Invoke-ToolDeployment
         }
-        if ($PSBoundParameters.ContainsKey('InstallEdrMsiPath')) {
-            Write-Log "Processing -InstallEdrMsiPath parameter..." -Level "INFO"
-            Invoke-EdrInstallation -MsiPath $InstallEdrMsiPath -UninstallPassword $UninstallEdrPassword -UninstallKeyFile $UninstallEdrKeyFile
+        if ($PSBoundParameters.ContainsKey('InstallEdrPath')) {
+            Write-Log "Processing -InstallEdrPath parameter..." -Level "INFO"
+            Invoke-EdrInstallation -InstallerPath $InstallEdrPath -UninstallPassword $UninstallEdrPassword -UninstallKeyFile $UninstallEdrKeyFile
+        }
+        if ($InstallEdrV1.IsPresent) {
+            Write-Log "Processing -InstallEdrV1 parameter..." -Level "INFO"
+            $v1Path = Get-DefaultEdrV1Path
+            Invoke-EdrInstallation -InstallerPath $v1Path -UninstallPassword $UninstallEdrPassword -UninstallKeyFile $UninstallEdrKeyFile
+        }
+        if ($InstallEdrV2.IsPresent) {
+            Write-Log "Processing -InstallEdrV2 parameter..." -Level "INFO"
+            $v2Path = Get-DefaultEdrV2Path
+            Invoke-EdrInstallation -InstallerPath $v2Path -UninstallPassword $UninstallEdrPassword -UninstallKeyFile $UninstallEdrKeyFile
         }
         if ($PSBoundParameters.ContainsKey('UninstallEdrPassword') -or $PSBoundParameters.ContainsKey('UninstallEdrKeyFile')) {
-            if (-not $PSBoundParameters.ContainsKey('InstallEdrMsiPath')) {
+            if (-not $PSBoundParameters.ContainsKey('InstallEdrPath') -and -not $InstallEdrV1.IsPresent -and -not $InstallEdrV2.IsPresent) {
                 Invoke-EdrUninstallation -Password $UninstallEdrPassword -KeyFile $UninstallEdrKeyFile
             }
         }

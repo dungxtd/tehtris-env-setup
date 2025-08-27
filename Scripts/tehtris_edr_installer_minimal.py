@@ -391,7 +391,7 @@ class TehtrisEDRInstaller:
         return False
 
     def verify_installation(self, post_install_check: bool = False) -> bool:
-        """Verify installation by checking for TEHTRIS Agent processes."""
+        """Verify installation by checking for TEHTRIS processes based on version."""
         if post_install_check:
             self.logger.info("Step 7: Verifying installation...")
         else:
@@ -400,7 +400,90 @@ class TehtrisEDRInstaller:
         try:
             import psutil
 
-            self.logger.info("Checking for Agent processes with TEHTRIS description...")
+            if self.edr_version.startswith('1.'):
+                self.logger.info("[EDR V1] Checking for dasc.exe with TEHTRIS/EDR/Agent description...")
+                return self._verify_v1_installation(post_install_check)
+            else:
+                self.logger.info("[EDR V2] Checking for Agent processes with TEHTRIS description...")
+                return self._verify_v2_installation(post_install_check)
+
+        except Exception as e:
+            self.logger.warning(f"Verification failed: {e}")
+            return post_install_check if post_install_check else False
+
+    def _verify_v1_installation(self, post_install_check: bool) -> bool:
+        """Verify v1.x.x installation by checking for dasc.exe running as Windows Service."""
+        try:
+            import psutil
+
+            tehtris_processes = []
+
+            for proc in psutil.process_iter(['pid', 'name', 'exe', 'username']):
+                try:
+                    proc_info = proc.info
+                    proc_name = proc_info['name'].lower()
+
+                    # Look for dasc.exe process (V1 runs as Windows Service)
+                    if proc_name == 'dasc.exe':
+                        exe_path = proc_info.get('exe', '')
+                        username = proc_info.get('username', '')
+                        
+                        # V1 dasc.exe typically runs under SYSTEM or as a service
+                        is_service = ('system' in username.lower() if username else True) or not username
+                        
+                        tehtris_processes.append({
+                            'pid': proc_info['pid'],
+                            'name': proc_info['name'],
+                            'exe': exe_path,
+                            'username': username or 'N/A',
+                            'is_service': is_service
+                        })
+                        
+                        service_info = "(Service)" if is_service else "(User Process)"
+                        self.logger.info(f"[FOUND V1] TEHTRIS dasc.exe {service_info}: PID {proc_info['pid']} - {exe_path}")
+                        self.logger.info(f"[FOUND V1] Running as: {username or 'SYSTEM/Service'}")
+                        
+                        # Try to get additional service info
+                        try:
+                            # Check if it's actually running as a Windows Service
+                            import subprocess
+                            result = subprocess.run(['tasklist', '/svc', '/fi', f'PID eq {proc_info["pid"]}'], 
+                                                  capture_output=True, text=True, shell=True)
+                            if 'Services' in result.stdout:
+                                self.logger.info(f"[FOUND V1] Confirmed as Windows Service")
+                        except Exception:
+                            pass
+
+                except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
+                    continue
+                except Exception as e:
+                    # Log but continue - some processes may not have all info accessible
+                    self.logger.debug(f"[V1 DEBUG] Could not get full info for process: {e}")
+                    continue
+
+            if tehtris_processes:
+                if post_install_check:
+                    self.logger.info(f"[SUCCESS V1] TEHTRIS EDR V1 verified - Found {len(tehtris_processes)} dasc.exe process(es)")
+                else:
+                    self.logger.warning("[DETECTED V1] TEHTRIS EDR V1 installation detected!")
+                return True
+            else:
+                if post_install_check:
+                    self.logger.warning("[NOT FOUND V1] No TEHTRIS V1 processes (dasc.exe) found")
+                    self.logger.warning("[NOT FOUND V1] Installation may have completed but processes haven't started yet")
+                else:
+                    self.logger.info("[NOT FOUND V1] No existing TEHTRIS EDR V1 installation found.")
+                return False
+
+        except Exception as e:
+            self.logger.warning(f"[ERROR V1] V1 verification failed: {e}")
+            return False
+
+    def _verify_v2_installation(self, post_install_check: bool) -> bool:
+        """Verify v2.x.x installation by checking for Agent processes with TEHTRIS description."""
+        try:
+            import psutil
+
             tehtris_agents = []
 
             for proc in psutil.process_iter(['pid', 'name', 'exe']):
@@ -416,28 +499,28 @@ class TehtrisEDRInstaller:
                                 'name': proc_info['name'],
                                 'exe': exe_path
                             })
-                            self.logger.info(f"[FOUND] TEHTRIS Agent: PID {proc_info['pid']} - {proc_info['name']} - {exe_path}")
+                            self.logger.info(f"[FOUND V2] TEHTRIS Agent: PID {proc_info['pid']} - {proc_info['name']} - {exe_path}")
 
                 except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
                     continue
 
             if tehtris_agents:
                 if post_install_check:
-                    self.logger.info(f"[SUCCESS] TEHTRIS EDR verified - Found {len(tehtris_agents)} Agent process(es)")
+                    self.logger.info(f"[SUCCESS V2] TEHTRIS EDR V2 verified - Found {len(tehtris_agents)} Agent process(es)")
                 else:
-                    self.logger.warning("TEHTRIS EDR installation detected!")
+                    self.logger.warning("[DETECTED V2] TEHTRIS EDR V2 installation detected!")
                 return True
             else:
                 if post_install_check:
-                    self.logger.warning("[NOT FOUND] No TEHTRIS Agent processes found")
-                    self.logger.warning("Installation may have completed but processes haven't started yet")
+                    self.logger.warning("[NOT FOUND V2] No TEHTRIS V2 Agent processes found")
+                    self.logger.warning("[NOT FOUND V2] Installation may have completed but processes haven't started yet")
                 else:
-                    self.logger.info("No existing TEHTRIS EDR installation found.")
+                    self.logger.info("[NOT FOUND V2] No existing TEHTRIS EDR V2 installation found.")
                 return False
 
         except Exception as e:
-            self.logger.warning(f"Verification failed: {e}")
-            return post_install_check if post_install_check else False
+            self.logger.warning(f"[ERROR V2] V2 verification failed: {e}")
+            return False
 
     def uninstall_existing_edr(self, credential_type: str, credential_value: str) -> bool:
         """Uninstall existing TEHTRIS EDR."""
@@ -505,7 +588,7 @@ class TehtrisEDRInstaller:
 
             if not self.launch_installer():
                 return False
-            time.sleep(0.5)
+            time.sleep(2)
 
             if not self.handle_welcome_screen():
                 return False
