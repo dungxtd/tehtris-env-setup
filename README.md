@@ -18,9 +18,19 @@ Run all scripts from an administrative PowerShell terminal.
 powershell.exe -ExecutionPolicy Bypass -File .\Scripts\setup_env.ps1 -All
 ```
 
-**Install EDR Only**
+**Install EDR V1 (Default)**
 ```powershell
-powershell.exe -ExecutionPolicy Bypass -File .\Scripts\setup_env.ps1 -InstallEdrMsiPath "C:\path\to\tehtris.msi" -UninstallEdrPassword "your_password"
+powershell.exe -ExecutionPolicy Bypass -File .\Scripts\setup_env.ps1 -InstallEdrV1
+```
+
+**Install EDR V2 (Default)**
+```powershell
+powershell.exe -ExecutionPolicy Bypass -File .\Scripts\setup_env.ps1 -InstallEdrV2 -UninstallEdrPassword "your_password"
+```
+
+**Install EDR (Custom Path)**
+```powershell
+powershell.exe -ExecutionPolicy Bypass -File .\Scripts\setup_env.ps1 -InstallEdrPath "C:\path\to\tehtris.exe" -UninstallEdrPassword "your_password"
 ```
 
 **Uninstall EDR Only**
@@ -30,4 +40,4 @@ powershell.exe -ExecutionPolicy Bypass -File .\Scripts\setup_env.ps1 -UninstallE
 
 ## Logging
 
-Logs are stored in the `Logs` directory.
+Logs are stored in the `Logs` directory with detailed version-specific information.
