@@ -350,6 +350,58 @@ function Install-Nmap {
 #endregion
 
 #region TEHTRIS EDR Integration Functions
+function Get-EdrVersionFromPath {
+    param(
+        [Parameter(Mandatory=$true)]
+        [string]$FilePath
+    )
+
+    $fileName = Split-Path $FilePath -Leaf
+    Write-Log "Detecting EDR version from filename: $fileName" -Level "INFO"
+
+    # Extract version using regex pattern (e.g., 1.8.1, 2.0.0)
+    if ($fileName -match '(\d+)\.(\d+)\.(\d+)') {
+        $version = $matches[0]
+        Write-Log "Detected specific version: $version" -Level "INFO"
+        return $version
+    }
+
+    # Fallback: detect major version
+    if ($fileName -match '[_\-]1[\._\-]') {
+        Write-Log "Detected version 1.x.x" -Level "INFO"
+        return "1.x.x"
+    } elseif ($fileName -match '[_\-]2[\._\-]') {
+        Write-Log "Detected version 2.x.x" -Level "INFO"
+        return "2.x.x"
+    }
+
+    # Default to 2.x.x if cannot detect
+    Write-Log "Could not detect version, defaulting to 2.x.x" -Level "WARN"
+    return "2.x.x"
+}
+
+function Get-DefaultEdrPath {
+    Write-Log "Determining default EDR installer path..." -Level "INFO"
+
+    # Check for version 1.8.1 first
+    $v1Path = Join-Path $Global:ToolsDir "TEHTRIS_EDR_1.8.1_rc2.exe"
+    if (Test-Path $v1Path) {
+        Write-Log "Found version 1.x.x installer: $v1Path" -Level "INFO"
+        return $v1Path
+    }
+
+    # Check for version 2.0.0
+    $v2Path = Join-Path $Global:ToolsDir "TEHTRIS_EDR_2.0.0_Windows_x86_64_MS-28.msi"
+    if (Test-Path $v2Path) {
+        Write-Log "Found version 2.x.x installer: $v2Path" -Level "INFO"
+        return $v2Path
+    }
+
+    # Return default v2 path even if file doesn't exist (for error handling)
+    Write-Log "No EDR installer found, returning default v2 path" -Level "WARN"
+    return $v2Path
+}
+
 function Invoke-TehtrisEdrInstaller {
     param(
         [Parameter(Mandatory=$true)]
@@ -361,6 +413,10 @@ function Invoke-TehtrisEdrInstaller {
     )
 
     Write-Log "Invoking TEHTRIS EDR installer..." -Level "INFO"
+
+    # Detect and log EDR version
+    $edrVersion = Get-EdrVersionFromPath -FilePath $MsiPath
+    Write-Log "EDR Version detected: $edrVersion" -Level "INFO"
 
     try {
         if (!(Test-Path $MsiPath)) {
@@ -561,7 +617,7 @@ try {
             $InstallEdrMsiPath
         } else {
             Write-Log "-InstallEdrMsiPath not provided with -All switch. Using default EDR installer." -Level "INFO"
-            Join-Path $Global:ToolsDir "TEHTRIS_EDR_2.0.0_Windows_x86_64_MS-28.msi"
+            Get-DefaultEdrPath
         }
         Invoke-EdrInstallation -MsiPath $msiPathToInstall -UninstallPassword $UninstallEdrPassword -UninstallKeyFile $UninstallEdrKeyFile
     } else {

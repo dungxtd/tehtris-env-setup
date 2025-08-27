@@ -9,6 +9,7 @@ import time
 import logging
 import subprocess
 import argparse
+import re
 from pathlib import Path
 
 try:
@@ -22,16 +23,23 @@ except ImportError:
 class TehtrisEDRInstaller:
     """Minimal TEHTRIS EDR installer automation."""
 
-    def __init__(self, msi_path: str, uninstall_password: str = None, uninstall_key_file: str = None):
-        self.msi_path = Path(msi_path)
+    def __init__(self, installer_path: str, uninstall_password: str = None, uninstall_key_file: str = None):
+        self.installer_path = Path(installer_path)
         self.uninstall_password = uninstall_password
         self.uninstall_key_file = uninstall_key_file
         self.logger = self._setup_logging()
+
+        # Detect EDR version from filename
+        self.edr_version = self._detect_edr_version()
+        self.logger.info(f"Detected EDR version: {self.edr_version}")
 
         # Configuration
         self.server_address = "xpgapp16.tehtris.net"
         self.tag = "XPG_QAT"
         self.license_key = "MH83-2CDX-9DXQ-LG89-92FF"
+
+        # Version-specific configuration
+        self.requires_license_key = self._requires_license_key()
 
     def _setup_logging(self) -> logging.Logger:
         """Setup logging."""
@@ -55,12 +63,42 @@ class TehtrisEDRInstaller:
 
         return logger
 
+    def _detect_edr_version(self) -> str:
+        """Detect EDR version from filename."""
+        filename = self.installer_path.name.lower()
+
+        # Extract version using regex pattern
+        # Matches patterns like: 1.8.1, 2.0.0, etc.
+        version_pattern = r'(\d+)\.(\d+)\.(\d+)'
+        match = re.search(version_pattern, filename)
+
+        if match:
+            major, minor, patch = match.groups()
+            return f"{major}.{minor}.{patch}"
+
+        # Fallback: try to detect major version from filename
+        if re.search(r'[_\-]1[\._\-]', filename):
+            return "1.x.x"
+        elif re.search(r'[_\-]2[\._\-]', filename):
+            return "2.x.x"
+
+        # Default to 2.x.x if cannot detect
+        return "2.x.x"
+
+    def _requires_license_key(self) -> bool:
+        """Determine if this version requires license key during installation."""
+        # Version 1.x.x does not require license key
+        # Version 2.x.x requires license key
+        if self.edr_version.startswith('1.'):
+            return False
+        return True
+
     def validate_prerequisites(self) -> bool:
         """Validate prerequisites."""
         self.logger.info("Validating prerequisites...")
 
-        if not self.msi_path.exists():
-            self.logger.error(f"MSI file not found: {self.msi_path}")
+        if not self.installer_path.exists():
+            self.logger.error(f"Installer file not found: {self.installer_path}")
             return False
 
         if not self._is_admin():
@@ -226,7 +264,7 @@ class TehtrisEDRInstaller:
             return False
 
     def launch_installer(self) -> bool:
-        """Launch MSI installer."""
+        """Launch installer (MSI or EXE)."""
         self.logger.info("Step 1: Launching installer...")
 
         try:
@@ -235,10 +273,22 @@ class TehtrisEDRInstaller:
             #     pyautogui.hotkey('win', 'd')
             #     time.sleep(1.5)
 
-            # Launch installer
-            subprocess.Popen(['msiexec', '/i', str(self.msi_path)], shell=True)
+            # Determine installer type and launch accordingly
+            file_extension = self.installer_path.suffix.lower()
+            
+            if file_extension == '.msi':
+                # Launch MSI installer with msiexec
+                subprocess.Popen(['msiexec', '/i', str(self.installer_path)], shell=True)
+                self.logger.info("MSI installer launched with msiexec")
+            elif file_extension == '.exe':
+                # Launch EXE installer directly
+                subprocess.Popen([str(self.installer_path)], shell=True)
+                self.logger.info("EXE installer launched directly")
+            else:
+                self.logger.error(f"Unsupported installer type: {file_extension}")
+                return False
+                
             time.sleep(5)
-
             self.logger.info("Installer launched successfully")
             return True
 
@@ -278,13 +328,21 @@ class TehtrisEDRInstaller:
         self.logger.info("Step 4: Handling activation information...")
         time.sleep(0.5)
 
-        # Fill fields
+        # Fill server address field
         if not self.fill_field_with_win32gui("server", self.server_address):
             return False
+
+        # Fill tag field
         if not self.fill_field_with_win32gui("tag", self.tag):
             return False
-        if not self.fill_field_with_win32gui("license", self.license_key):
-            return False
+
+        # Fill license key field only for version 2.x.x
+        if self.requires_license_key:
+            self.logger.info("Version 2.x.x detected - filling license key field")
+            if not self.fill_field_with_win32gui("license", self.license_key):
+                return False
+        else:
+            self.logger.info("Version 1.x.x detected - skipping license key field")
 
         time.sleep(1)
         return self.click_with_win32gui("Next")
@@ -482,14 +540,14 @@ class TehtrisEDRInstaller:
 def main():
     """Main entry point."""
     parser = argparse.ArgumentParser(description="TEHTRIS EDR Installer")
-    parser.add_argument("msi_path", help="Path to the TEHTRIS EDR MSI installer")
+    parser.add_argument("installer_path", help="Path to the TEHTRIS EDR installer (MSI or EXE)")
     parser.add_argument("--uninstall-password", help="Password for uninstalling a previous version")
     parser.add_argument("--uninstall-key-file", help="Key file for uninstalling a previous version")
 
     args = parser.parse_args()
 
     installer = TehtrisEDRInstaller(
-        msi_path=args.msi_path,
+        installer_path=args.installer_path,
         uninstall_password=args.uninstall_password,
         uninstall_key_file=args.uninstall_key_file
     )
