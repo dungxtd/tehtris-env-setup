@@ -2,6 +2,8 @@
 
 This repository automates the setup of a security testing environment on Windows, including disabling security features, installing tools, and installing TEHTRIS EDR.
 
+> **⚠️ Important:** Before running these scripts, manually turn off **Windows Defender Tamper Protection** in Windows Security settings. The automation cannot disable Tamper Protection programmatically, and it will prevent the scripts from disabling Windows Defender.
+
 ## Prerequisites
 
 *   Windows 10 or later
