@@ -431,13 +431,14 @@ class TehtrisEDRUninstaller:
             return False
 
     def find_and_launch_uninstaller(self) -> bool:
-        """Find and launch the TEHTRIS EDR uninstaller using standard Windows method."""
+        """Find and launch the TEHTRIS EDR uninstaller."""
         self.logger.info(f"[{self.edr_version}] Step 1: Finding and launching uninstaller...")
         try:
             import winreg
 
             uninstall_key_path = r"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall"
-            uninstall_info = None
+            uninstall_command = None
+            display_name = None
 
             # Try 64-bit and 32-bit registry views
             for access_right in [winreg.KEY_WOW64_64KEY, winreg.KEY_WOW64_32KEY]:
@@ -449,67 +450,32 @@ class TehtrisEDRUninstaller:
                                 try:
                                     display_name = winreg.QueryValueEx(subkey, "DisplayName")[0]
                                     if "tehtris edr" in display_name.lower():
-                                        try:
-                                            uninstall_string = winreg.QueryValueEx(subkey, "UninstallString")[0]
-                                            
-                                            # Version-based uninstall logic (ignore MSI/EXE detection)
-                                            if self.edr_version.startswith('1.'):
-                                                # V1: Add silent flags to avoid confirmation dialogs
-                                                silent_command = self._add_silent_flags_v1(uninstall_string)
-                                                uninstall_info = {
-                                                    'version': 'v1',
-                                                    'command': silent_command,
-                                                    'original_command': uninstall_string,
-                                                    'display_name': display_name
-                                                }
-                                            else:
-                                                # V2: Always use MSI uninstall method
-                                                import re
-                                                product_code_match = re.search(r'{[A-F0-9\-]+}', uninstall_string)
-                                                if product_code_match:
-                                                    product_code = product_code_match.group(0)
-                                                    uninstall_info = {
-                                                        'version': 'v2',
-                                                        'product_code': product_code,
-                                                        'display_name': display_name,
-                                                        'command': f'msiexec /x {product_code}'
-                                                    }
-                                                else:
-                                                    # Fallback: use direct uninstall string for V2
-                                                    uninstall_info = {
-                                                        'version': 'v2',
-                                                        'command': uninstall_string,
-                                                        'display_name': display_name
-                                                    }
-                                            break
-                                        except OSError:
-                                            continue
+                                        uninstall_command = winreg.QueryValueEx(subkey, "UninstallString")[0]
+                                        self.logger.info(f"[{self.edr_version}] Found uninstaller: {display_name}")
+                                        break
                                 except OSError:
                                     continue
-                    if uninstall_info:
-                                        break
+                    if uninstall_command:
+                        break
                 except FileNotFoundError:
                     continue
 
-            if not uninstall_info:
+            if not uninstall_command:
                 self.logger.error(f"[{self.edr_version}] TEHTRIS EDR uninstaller not found in registry.")
                 return False
 
-            self.logger.info(f"[{self.edr_version}] Found uninstaller: {uninstall_info['display_name']}")
-            self.logger.info(f"[{self.edr_version}] Uninstaller version: {uninstall_info['version']}")
-
-            # Launch the appropriate uninstall command based on version
-            command = uninstall_info['command']
-            if uninstall_info['version'] == 'v1':
-                self.logger.info(f"[V1] Launching silent uninstall: {command}")
-                # For V1 silent uninstall, capture output and wait for completion
+            # For V1, add silent flags and run directly
+            if self.edr_version.startswith('1.'):
+                silent_command = self._add_silent_flags_v1(uninstall_command)
+                self.logger.info(f"[V1] Launching silent uninstall: {silent_command}")
+                
                 try:
-                    result = subprocess.run(command, shell=True, capture_output=True, text=True, timeout=300)
+                    result = subprocess.run(silent_command, shell=True, capture_output=True, text=True, timeout=300)
                     self.uninstall_result = {
                         'returncode': result.returncode,
                         'stdout': result.stdout,
                         'stderr': result.stderr,
-                        'command': command
+                        'command': silent_command
                     }
                     self.logger.info(f"[V1] Uninstall command completed with exit code: {result.returncode}")
                     if result.stdout:
@@ -523,25 +489,26 @@ class TehtrisEDRUninstaller:
                 except Exception as e:
                     self.logger.error(f"[V1] Failed to execute uninstall command: {e}")
                     return False
+            
+            # For V2, launch normally and proceed with GUI automation
             else:
-                self.logger.info(f"[V2] Launching MSI uninstall: {command}")
-                subprocess.Popen(command, shell=True)
+                self.logger.info(f"[V2] Launching uninstaller: {uninstall_command}")
+                subprocess.Popen(uninstall_command, shell=True)
+                time.sleep(5)
 
-            time.sleep(5)
+                # Wait for the TEHTRIS EDR Setup window to appear
+                self.logger.info(f"[V2] Waiting for TEHTRIS EDR Setup window to appear...")
+                setup_window_timeout = 30  # 30 seconds
+                start_time = time.time()
 
-            # Wait for the TEHTRIS EDR Setup window to appear
-            self.logger.info(f"[{self.edr_version}] Waiting for TEHTRIS EDR Setup window to appear...")
-            setup_window_timeout = 30  # 30 seconds
-            start_time = time.time()
+                while time.time() - start_time < setup_window_timeout:
+                    if self._check_tehtris_window_exists():
+                        self.logger.info(f"[V2] TEHTRIS EDR Setup window detected - Uninstaller launched successfully")
+                        return True
+                    time.sleep(1)
 
-            while time.time() - start_time < setup_window_timeout:
-                if self._check_tehtris_window_exists():
-                    self.logger.info(f"[{self.edr_version}] TEHTRIS EDR Setup window detected - Uninstaller launched successfully")
-                    return True
-                time.sleep(1)
-
-            self.logger.error(f"[{self.edr_version}] TEHTRIS EDR Setup window did not appear within timeout")
-            return False
+                self.logger.error(f"[V2] TEHTRIS EDR Setup window did not appear within timeout")
+                return False
 
         except Exception as e:
             self.logger.error(f"[{self.edr_version}] Failed to launch uninstaller: {e}")
@@ -572,39 +539,97 @@ class TehtrisEDRUninstaller:
 
 
     def check_for_error_dialog(self) -> (int, str):
-        """Check for the 'Error during uninstallation' dialog and extract the message."""
+        """Check for various error dialogs and extract the message."""
         try:
             import win32gui
 
-            dialog_hwnd = win32gui.FindWindow(None, "Error during uninstallation")
-            if dialog_hwnd:
-                self.logger.warning("Error dialog detected.")
-
-                # Enumerate all child windows to find the static text controls
-                child_windows = []
-                def find_children(hwnd, lparam):
-                    child_windows.append(hwnd)
-                    return True
-                win32gui.EnumChildWindows(dialog_hwnd, find_children, None)
-
-                error_messages = []
-                for hwnd in child_windows:
-                    if win32gui.GetClassName(hwnd) == "Static":
-                        text = win32gui.GetWindowText(hwnd)
-                        if text:
-                            error_messages.append(text)
-
-                full_error_message = " ".join(error_messages).strip()
-                if full_error_message:
-                    return dialog_hwnd, full_error_message
-                else:
-                    return dialog_hwnd, "Could not retrieve error message from dialog."
+            # List of potential error dialog titles
+            error_dialog_titles = [
+                "Error during uninstallation",
+                "Error",
+                "Uninstall Error", 
+                "Installation Error",
+                "TEHTRIS EDR Error",
+                "Windows Installer"
+            ]
+            
+            # Also check for dialogs containing error keywords
+            error_keywords = ["error", "failed", "cannot", "unable"]
+            
+            self.logger.debug(f"[{self.edr_version}] Checking for error dialogs...")
+            
+            # First, try specific error dialog titles
+            for title in error_dialog_titles:
+                dialog_hwnd = win32gui.FindWindow(None, title)
+                if dialog_hwnd:
+                    self.logger.warning(f"[{self.edr_version}] Error dialog detected with title: '{title}'")
+                    error_message = self._extract_error_message(dialog_hwnd, title)
+                    return dialog_hwnd, error_message
+            
+            # Then, enumerate all visible dialogs and check for error keywords
+            error_dialogs = []
+            def find_error_dialogs(hwnd, dialogs):
+                try:
+                    if win32gui.IsWindowVisible(hwnd):
+                        window_text = win32gui.GetWindowText(hwnd)
+                        class_name = win32gui.GetClassName(hwnd)
+                        
+                        # Look for dialog boxes with error-related text
+                        if window_text and class_name in ['#32770', 'Dialog']:
+                            for keyword in error_keywords:
+                                if keyword.lower() in window_text.lower():
+                                    dialogs.append((hwnd, window_text))
+                                    break
+                except:
+                    pass
+                return True
+                
+            win32gui.EnumWindows(find_error_dialogs, error_dialogs)
+            
+            if error_dialogs:
+                dialog_hwnd, window_title = error_dialogs[0]  # Take the first error dialog found
+                self.logger.warning(f"[{self.edr_version}] Error dialog detected by keyword: '{window_title}'")
+                error_message = self._extract_error_message(dialog_hwnd, window_title)
+                return dialog_hwnd, error_message
 
             return 0, None
 
         except Exception as e:
-            self.logger.debug(f"Error checking for error dialog: {e}")
+            self.logger.debug(f"[{self.edr_version}] Error checking for error dialog: {e}")
             return 0, None
+
+    def _extract_error_message(self, dialog_hwnd: int, dialog_title: str) -> str:
+        """Extract error message from dialog."""
+        try:
+            import win32gui
+            
+            # Enumerate all child windows to find the static text controls
+            child_windows = []
+            def find_children(hwnd, lparam):
+                child_windows.append(hwnd)
+                return True
+            win32gui.EnumChildWindows(dialog_hwnd, find_children, None)
+
+            error_messages = []
+            for hwnd in child_windows:
+                try:
+                    class_name = win32gui.GetClassName(hwnd)
+                    if class_name in ["Static", "Edit"]:  # Include Edit controls too
+                        text = win32gui.GetWindowText(hwnd)
+                        if text and len(text.strip()) > 2:  # Ignore very short text
+                            error_messages.append(text.strip())
+                except:
+                    continue
+
+            if error_messages:
+                full_error_message = " | ".join(error_messages)
+                return f"Dialog: '{dialog_title}' - Message: {full_error_message}"
+            else:
+                return f"Error dialog detected: '{dialog_title}' (no detailed message found)"
+                
+        except Exception as e:
+            self.logger.debug(f"[{self.edr_version}] Error extracting message: {e}")
+            return f"Error dialog detected: '{dialog_title}' (message extraction failed)"
 
 
     def handle_uninstallation_error(self, dialog_hwnd: int, error_message: str):
@@ -733,24 +758,82 @@ class TehtrisEDRUninstaller:
         self.logger.info(f"[{self.edr_version}] Step 4: Confirming removal...")
         time.sleep(1)
 
-        # Try clicking the Remove button directly
-        if self.click_with_win32gui("Remove"):
-            return True
+        # First, let's see what buttons are available
+        self._debug_available_buttons()
+
+        # Try multiple variations of the Remove button text
+        remove_variations = ["Remove", "&Remove", "Uninstall", "&Uninstall", "Delete", "&Delete"]
+        
+        for remove_text in remove_variations:
+            self.logger.info(f"[{self.edr_version}] Trying to click: '{remove_text}'")
+            if self.click_with_win32gui(remove_text):
+                self.logger.info(f"[{self.edr_version}] Successfully clicked '{remove_text}' button")
+                time.sleep(2)  # Wait for removal to start
+                return True
 
         # Fallback to using the keyboard shortcut (Alt+R)
-        self.logger.warning("win32gui click failed for 'Remove' button. Trying keyboard shortcut Alt+R.")
+        self.logger.warning(f"[{self.edr_version}] All Remove button variations failed. Trying keyboard shortcut Alt+R.")
         if PYAUTOGUI_AVAILABLE:
             try:
                 pyautogui.hotkey('alt', 'r')
-                time.sleep(1)
-                self.logger.info("Successfully sent Alt+R shortcut.")
+                time.sleep(2)
+                self.logger.info(f"[{self.edr_version}] Successfully sent Alt+R shortcut.")
                 return True
             except Exception as e:
-                self.logger.error(f"pyautogui hotkey failed: {e}")
+                self.logger.error(f"[{self.edr_version}] pyautogui hotkey failed: {e}")
                 return False
         else:
-            self.logger.error("pyautogui is not available, cannot use fallback hotkey.")
+            self.logger.error(f"[{self.edr_version}] pyautogui is not available, cannot use fallback hotkey.")
             return False
+
+    def _debug_available_buttons(self):
+        """Debug helper to list all available buttons."""
+        try:
+            import win32gui
+            self.logger.info(f"[{self.edr_version}] DEBUG: Scanning for available buttons...")
+            
+            # Find TEHTRIS windows
+            tehtris_windows = []
+            def find_windows(hwnd, windows):
+                try:
+                    if win32gui.IsWindowVisible(hwnd):
+                        window_text = win32gui.GetWindowText(hwnd)
+                        if ("TEHTRIS EDR Setup" in window_text or 
+                            ("TEHTRIS EDR" in window_text and self.edr_version.startswith('1.'))):
+                            windows.append(hwnd)
+                except:
+                    pass
+                return True
+
+            win32gui.EnumWindows(find_windows, tehtris_windows)
+            
+            for tehtris_hwnd in tehtris_windows:
+                try:
+                    def find_buttons(hwnd, button_list):
+                        try:
+                            if win32gui.IsWindowVisible(hwnd):
+                                window_text = win32gui.GetWindowText(hwnd)
+                                class_name = win32gui.GetClassName(hwnd)
+                                
+                                if window_text and class_name == 'Button':
+                                    button_list.append(window_text)
+                        except:
+                            pass
+                        return True
+
+                    button_list = []
+                    win32gui.EnumChildWindows(tehtris_hwnd, find_buttons, button_list)
+                    
+                    if button_list:
+                        self.logger.info(f"[{self.edr_version}] DEBUG: Available buttons: {button_list}")
+                    else:
+                        self.logger.info(f"[{self.edr_version}] DEBUG: No buttons found in window")
+                        
+                except Exception as e:
+                    self.logger.debug(f"[{self.edr_version}] DEBUG: Error scanning buttons: {e}")
+                    
+        except Exception as e:
+            self.logger.debug(f"[{self.edr_version}] DEBUG: Button scan failed: {e}")
 
     def wait_for_completion(self) -> bool:
         """Wait for uninstallation to complete, checking for errors."""
@@ -771,7 +854,8 @@ class TehtrisEDRUninstaller:
 
             # Check for successful completion
             if self.click_with_win32gui("Finish"):
-                self.logger.info("Clicked Finish button")
+                self.logger.info(f"[{self.edr_version}] Clicked Finish button - uninstall completed successfully")
+                time.sleep(2)  # Give time for the uninstaller to fully close
                 return True
 
             time.sleep(2)
@@ -815,7 +899,11 @@ class TehtrisEDRUninstaller:
                 return False
             time.sleep(0.5)
 
-            if not self.wait_for_completion():
+            completion_result = self.wait_for_completion()
+            self.logger.info(f"[{self.edr_version}] wait_for_completion returned: {completion_result}")
+            
+            if not completion_result:
+                self.logger.error(f"[{self.edr_version}] wait_for_completion returned False")
                 return False
 
             self.logger.info(f"[{self.edr_version}] TEHTRIS EDR uninstallation completed successfully!")
