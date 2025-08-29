@@ -15,17 +15,17 @@ This repository automates the setup of a security testing environment on Windows
 
 Run all scripts from an administrative PowerShell terminal.
 
-**Full Setup**
+**Full Setup (No EDR Installation)**
 ```powershell
-powershell.exe -ExecutionPolicy Bypass -File .\Scripts\setup_env.ps1 -All
+powershell.exe -ExecutionPolicy Bypass -File .\Scripts\setup_env.ps1
 ```
 
-**Install EDR V1 (Default)**
+**Install EDR V1**
 ```powershell
 powershell.exe -ExecutionPolicy Bypass -File .\Scripts\setup_env.ps1 -InstallEdrV1
 ```
 
-**Install EDR V2 (Default)**
+**Install EDR V2**
 ```powershell
 powershell.exe -ExecutionPolicy Bypass -File .\Scripts\setup_env.ps1 -InstallEdrV2 -UninstallEdrPassword "your_password"
 ```

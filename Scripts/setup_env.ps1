@@ -661,18 +661,12 @@ try {
     }
 
     if ($All) {
-        Write-Log "'-All' switch specified. Running full setup..." -Level "INFO"
+        Write-Log "'-All' switch specified. Running full setup (EDR installation skipped)..." -Level "INFO"
         Write-Section "SECURITY CONFIGURATION"
         Set-WindowsDefender -Disable $true
         Set-WindowsFirewall -Disable $true
         Invoke-ToolDeployment
-        $installerPathToInstall = if ($PSBoundParameters.ContainsKey('InstallEdrPath')) {
-            $InstallEdrPath
-        } else {
-            Write-Log "-InstallEdrPath not provided with -All switch. Using default EDR installer." -Level "INFO"
-            Get-DefaultEdrPath
-        }
-        Invoke-EdrInstallation -InstallerPath $installerPathToInstall -UninstallPassword $UninstallEdrPassword -UninstallKeyFile $UninstallEdrKeyFile
+        Write-Log "EDR installation skipped with -All parameter. Use specific EDR parameters to install EDR." -Level "INFO"
     } else {
         # Individual actions
         if ($DisableSec.IsPresent) {
