@@ -165,7 +165,196 @@ class TehtrisEDRUninstaller:
         self.logger.info(f"[{self.edr_version}] Prerequisites validated successfully")
         return True
 
+    def scan_available_buttons(self) -> list:
+        """Scan and return all available buttons in TEHTRIS windows."""
+        available_buttons = []
+        try:
+            import win32gui
+            
+            # Find TEHTRIS windows
+            tehtris_windows = []
+            def find_windows(hwnd, windows):
+                try:
+                    if win32gui.IsWindowVisible(hwnd):
+                        window_text = win32gui.GetWindowText(hwnd)
+                        if ("TEHTRIS EDR Setup" in window_text or 
+                            ("TEHTRIS EDR" in window_text and self.edr_version.startswith('1.'))):
+                            windows.append(hwnd)
+                except:
+                    pass
+                return True
+            
+            win32gui.EnumWindows(find_windows, tehtris_windows)
+            
+            for tehtris_hwnd in tehtris_windows:
+                try:
+                    def find_all_buttons(hwnd, button_list):
+                        try:
+                            if win32gui.IsWindowVisible(hwnd):
+                                window_text = win32gui.GetWindowText(hwnd)
+                                class_name = win32gui.GetClassName(hwnd)
+                                
+                                if window_text and class_name == 'Button':
+                                    clean_text = window_text.replace('&', '').lower().strip()
+                                    if clean_text and len(clean_text) > 0:
+                                        button_list.append(clean_text)
+                        except:
+                            pass
+                        return True
+                    
+                    win32gui.EnumChildWindows(tehtris_hwnd, find_all_buttons, available_buttons)
+                except:
+                    pass
+            
+            # Remove duplicates and sort
+            available_buttons = sorted(list(set(available_buttons)))
+            return available_buttons
+            
+        except Exception as e:
+            self.logger.debug(f"Button scanning failed: {e}")
+            return []
 
+    def _scan_radio_buttons(self) -> list:
+        """Scan and return all available radio buttons."""
+        radio_buttons = []
+        try:
+            import win32gui
+            import win32con
+            
+            # Find TEHTRIS windows
+            tehtris_windows = []
+            def find_windows(hwnd, windows):
+                try:
+                    if win32gui.IsWindowVisible(hwnd):
+                        window_text = win32gui.GetWindowText(hwnd)
+                        if ("TEHTRIS EDR Setup" in window_text or 
+                            ("TEHTRIS EDR" in window_text and self.edr_version.startswith('1.'))):
+                            windows.append(hwnd)
+                except:
+                    pass
+                return True
+            
+            win32gui.EnumWindows(find_windows, tehtris_windows)
+            
+            for tehtris_hwnd in tehtris_windows:
+                try:
+                    def find_radios(hwnd, radio_list):
+                        try:
+                            if win32gui.IsWindowVisible(hwnd):
+                                window_text = win32gui.GetWindowText(hwnd)
+                                class_name = win32gui.GetClassName(hwnd)
+                                
+                                if class_name == 'Button':
+                                    # Check if it's a radio button
+                                    style = win32gui.GetWindowLong(hwnd, win32con.GWL_STYLE)
+                                    if style & 0x04:  # BS_RADIOBUTTON
+                                        if window_text and window_text.strip():
+                                            radio_list.append(window_text.strip().lower())
+                        except:
+                            pass
+                        return True
+                    
+                    win32gui.EnumChildWindows(tehtris_hwnd, find_radios, radio_buttons)
+                except:
+                    pass
+            
+            return list(set(radio_buttons))
+            
+        except Exception as e:
+            self.logger.debug(f"Radio button scanning failed: {e}")
+            return []
+
+    def _count_text_areas(self) -> int:
+        """Count text areas/edit controls in current window."""
+        try:
+            import win32gui
+            
+            # Find TEHTRIS windows
+            tehtris_windows = []
+            def find_windows(hwnd, windows):
+                try:
+                    if win32gui.IsWindowVisible(hwnd):
+                        window_text = win32gui.GetWindowText(hwnd)
+                        if ("TEHTRIS EDR Setup" in window_text or 
+                            ("TEHTRIS EDR" in window_text and self.edr_version.startswith('1.'))):
+                            windows.append(hwnd)
+                except:
+                    pass
+                return True
+            
+            win32gui.EnumWindows(find_windows, tehtris_windows)
+            
+            text_area_count = 0
+            for tehtris_hwnd in tehtris_windows:
+                try:
+                    def count_text_areas(hwnd, counter):
+                        try:
+                            if win32gui.IsWindowVisible(hwnd):
+                                class_name = win32gui.GetClassName(hwnd)
+                                if class_name in ['Edit', 'RichEdit20W', 'RichEdit20A']:
+                                    counter[0] += 1
+                        except:
+                            pass
+                        return True
+                    
+                    counter = [0]
+                    win32gui.EnumChildWindows(tehtris_hwnd, count_text_areas, counter)
+                    text_area_count += counter[0]
+                except:
+                    pass
+            
+            return text_area_count
+            
+        except Exception as e:
+            self.logger.debug(f"Text area counting failed: {e}")
+            return 0
+
+    def detect_current_step(self) -> str:
+        """Detect current uninstaller step based on available buttons and UI elements."""
+        buttons = self.scan_available_buttons()
+        radio_buttons = self._scan_radio_buttons()
+        text_areas = self._count_text_areas()
+        
+        self.logger.info(f"[{self.edr_version}] Available buttons: {buttons}")
+        self.logger.info(f"[{self.edr_version}] Available radio buttons: {radio_buttons}")
+        self.logger.info(f"[{self.edr_version}] Text areas count: {text_areas}")
+        
+        # V2 Uninstaller step detection patterns:
+        # Step 1: ['back', 'next', 'cancel']
+        # Step 2: ['back', 'next', 'cancel'] + 2 radio buttons + 1 textarea
+        
+        # Check for completion/final steps first
+        if any(btn in buttons for btn in ['finish', 'close', 'done', 'exit']):
+            return 'complete'
+        elif any(btn in buttons for btn in ['remove', 'uninstall', 'delete']):
+            return 'remove'
+        elif any(btn in buttons for btn in ['yes', 'ok', 'confirm']):
+            return 'confirmation'
+        
+        # V2 specific step detection
+        if self.edr_version.startswith('2.') or not self.edr_version.startswith('1.'):
+            # Check for Step 2: back/next/cancel + 2 radio buttons + 1 textarea
+            if (any(btn in buttons for btn in ['back', '< back']) and 
+                any(btn in buttons for btn in ['next', 'next >', 'continue']) and
+                any(btn in buttons for btn in ['cancel']) and
+                len(radio_buttons) >= 2 and text_areas >= 1):
+                self.logger.info(f"[{self.edr_version}] Detected Step 2 (verification) - has radio buttons and textarea")
+                return 'verification'  # Step 2
+            
+            # Check for Step 1: just back/next/cancel (no radio buttons or text areas)
+            elif (any(btn in buttons for btn in ['back', '< back']) and 
+                  any(btn in buttons for btn in ['next', 'next >', 'continue']) and
+                  any(btn in buttons for btn in ['cancel']) and
+                  len(radio_buttons) == 0 and text_areas == 0):
+                self.logger.info(f"[{self.edr_version}] Detected Step 1 (welcome) - basic navigation only")
+                return 'welcome'  # Step 1
+        
+        # V1 fallback patterns
+        elif any(btn in buttons for btn in ['next', 'next >', 'continue']):
+            return 'welcome'
+        
+        self.logger.warning(f"[{self.edr_version}] Unknown step detected")
+        return 'unknown'
 
     def click_with_win32gui(self, button_text: str) -> bool:
         """Click button using win32gui."""
@@ -711,23 +900,61 @@ class TehtrisEDRUninstaller:
             return False
 
     def handle_welcome_screen(self) -> bool:
-        """Handle welcome screen or initial dialog."""
-        if self.edr_version.startswith('1.'):
-            self.logger.info(f"[V1] Step 2: Handling initial TEHTRIS EDR dialog...")
-            # V1 may have a simple dialog with title "TEHTRIS EDR" -> click OK
-            time.sleep(1)
-            if self.click_with_win32gui("OK"):
-                self.logger.info(f"[V1] Successfully clicked OK on initial dialog")
-                time.sleep(1)
-                # After OK, proceed with Next if there's a welcome screen
-                return self.click_with_win32gui("Next")
+        """Handle welcome screen (Step 1) with smart step detection."""
+        self.logger.info(f"[{self.edr_version}] Step 1: Handling welcome screen...")
+        
+        timeout = 30  # 30 seconds
+        start_time = time.time()
+        
+        while time.time() - start_time < timeout:
+            # Detect current step
+            current_step = self.detect_current_step()
+            
+            if current_step == 'verification':
+                self.logger.info(f"[{self.edr_version}] Already moved to Step 2 (verification)")
+                return True
+            elif current_step == 'remove':
+                self.logger.info(f"[{self.edr_version}] Already moved to remove step")
+                return True
+            elif current_step == 'complete':
+                self.logger.info(f"[{self.edr_version}] Already moved to completion")
+                return True
+            
+            # Try version-specific handling
+            if self.edr_version.startswith('1.'):
+                # V1 may have initial dialog with OK button first
+                if self.click_with_win32gui("OK"):
+                    self.logger.info(f"[V1] Successfully clicked OK on initial dialog")
+                    time.sleep(0.5)
+                    continue  # Re-check step after OK
+                elif self.click_with_win32gui("Next"):
+                    self.logger.info(f"[V1] Successfully clicked Next on Step 1")
+                    time.sleep(0.5)
+                    # Verify step advancement
+                    new_step = self.detect_current_step()
+                    if new_step != 'welcome' and new_step != 'unknown':
+                        self.logger.info(f"[V1] Step 1 completed, moved to {new_step}")
+                        return True
             else:
-                # Maybe no initial dialog, try Next directly
-                return self.click_with_win32gui("Next")
-        else:
-            self.logger.info(f"[V2] Step 2: Handling welcome screen...")
+                # V2 handling - should be Step 1: back/next/cancel only
+                if current_step == 'welcome':
+                    if self.click_with_win32gui("Next"):
+                        self.logger.info(f"[V2] Successfully clicked Next on Step 1 (welcome)")
+                        time.sleep(0.5)
+                        # Verify step advancement
+                        new_step = self.detect_current_step()
+                        if new_step == 'verification':
+                            self.logger.info(f"[V2] Step 1 completed, moved to Step 2 (verification)")
+                            return True
+                        elif new_step != 'welcome' and new_step != 'unknown':
+                            self.logger.info(f"[V2] Step 1 completed, moved to {new_step}")
+                            return True
+            
+            self.logger.info(f"[{self.edr_version}] Step 1 not ready yet, retrying in 1 second...")
             time.sleep(1)
-            return self.click_with_win32gui("Next")
+        
+        self.logger.error(f"[{self.edr_version}] Failed to handle Step 1 within timeout")
+        return False
 
     def handle_verification_screen(self) -> bool:
         """Handle verification screen."""
