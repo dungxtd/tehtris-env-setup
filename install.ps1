@@ -5,11 +5,10 @@
 param ()
 
 # --- Configuration ---
-$RepoUrl = "https://github.com/dungxtd/tehtris-env-setup/archive/refs/heads/master.zip"
+$ApiUrl = "https://api.github.com/repos/dungxtd/tehtris-env-setup/releases/latest"
 $TempDir = "C:\Temp"
-$RepoZipPath = Join-Path $TempDir "tehtris-repo.zip"
-$ExtractedDirName = "tehtris-env-setup-master" # Default dir name from GitHub zip
-$ExtractedPath = Join-Path $TempDir $ExtractedDirName
+$RepoZipPath = Join-Path $TempDir "tehtris-env-setup.zip"
+$ExtractedPath = Join-Path $TempDir "tehtris-env-setup"
 $SetupScriptPath = Join-Path $ExtractedPath "Scripts\setup_env.ps1"
 
 # --- Bootstrap Functions ---
@@ -34,14 +33,25 @@ try {
         New-Item -ItemType Directory -Path $TempDir -Force | Out-Null
     }
 
-    # 3. Download the Repository
-    Write-BootstrapLog "Downloading repository from $RepoUrl..." -Color Yellow
-    Invoke-WebRequest -Uri $RepoUrl -OutFile $RepoZipPath -UseBasicParsing
-    Write-BootstrapLog "Repository downloaded successfully." -Color Green
+    # 3. Download the Repository from the Latest Release
+    Write-BootstrapLog "Fetching latest release from GitHub..." -Color Yellow
+    $release = Invoke-RestMethod -Uri $ApiUrl -UseBasicParsing
+    $downloadUrl = $release.assets | Where-Object { $_.name -eq "tehtris-env-setup.zip" } | Select-Object -ExpandProperty browser_download_url
+
+    if (-not $downloadUrl) {
+        throw "Could not find 'tehtris-env-setup.zip' in the latest release. Please check the repository releases."
+    }
+
+    Write-BootstrapLog "Downloading release asset from $downloadUrl..." -Color Yellow
+    Invoke-WebRequest -Uri $downloadUrl -OutFile $RepoZipPath -UseBasicParsing
+    Write-BootstrapLog "Release downloaded successfully." -Color Green
 
     # 4. Extract the Repository
-    Write-BootstrapLog "Extracting repository to $TempDir..." -Color Yellow
-    Expand-Archive -Path $RepoZipPath -DestinationPath $TempDir -Force
+    Write-BootstrapLog "Extracting repository to $ExtractedPath..." -Color Yellow
+    if (Test-Path $ExtractedPath) {
+        Remove-Item -Recurse -Force $ExtractedPath
+    }
+    Expand-Archive -Path $RepoZipPath -DestinationPath $ExtractedPath -Force
     Write-BootstrapLog "Repository extracted successfully." -Color Green
 
     # 5. Verify Setup Script Exists
