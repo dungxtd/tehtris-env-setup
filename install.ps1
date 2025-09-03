@@ -1,14 +1,14 @@
 # Bootstrapper for Security Testing Environment Setup
-# USAGE: powershell "iex (irm https://raw.githubusercontent.com/dungxtd/tehtris-env-setup/main/install.ps1)" -InstallEdrV1
+# USAGE: powershell "iex ((New-Object System.Net.WebClient).DownloadString('https://raw.githubusercontent.com/dungxtd/tehtris-env-setup/master/install.ps1'))" -InstallEdrV1
 
 [CmdletBinding(SupportsShouldProcess=$true)]
 param ()
 
 # --- Configuration ---
-$RepoUrl = "https://github.com/dungxtd/tehtris-env-setup/archive/refs/heads/main.zip"
+$RepoUrl = "https://github.com/dungxtd/tehtris-env-setup/archive/refs/heads/master.zip"
 $TempDir = "C:\Temp"
 $RepoZipPath = Join-Path $TempDir "tehtris-repo.zip"
-$ExtractedDirName = "tehtris-env-setup-main" # Default dir name from GitHub zip
+$ExtractedDirName = "tehtris-env-setup-master" # Default dir name from GitHub zip
 $ExtractedPath = Join-Path $TempDir $ExtractedDirName
 $SetupScriptPath = Join-Path $ExtractedPath "Scripts\setup_env.ps1"
 
