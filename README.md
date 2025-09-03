@@ -17,23 +17,23 @@ This step is mandatory because Tamper Protection is designed by Microsoft to pre
 Run the following command from an **administrative PowerShell terminal**.
 
 ```powershell
-powershell -ExecutionPolicy Bypass -Command "iex ((New-Object System.Net.WebClient).DownloadString('https://raw.githubusercontent.com/dungxtd/tehtris-env-setup/master/install.ps1'))"
+Set-ExecutionPolicy Bypass -Scope Process -Force; iex ((New-Object System.Net.WebClient).DownloadString('https://raw.githubusercontent.com/dungxtd/tehtris-env-setup/master/install.ps1'))
 ```
 
 This command intelligently handles updates. If you have a previous version, it will only download the new release if one is available.
 
 ## Usage with Parameters
 
-You can pass parameters directly to the command to customize the installation, such as installing TEHTRIS EDR.
+To pass parameters, use the `& { ... }` script block syntax as shown below. This ensures the arguments are passed to the script, not the installer command.
 
 **Install EDR V1**
 ```powershell
-powershell -ExecutionPolicy Bypass -Command "iex ((New-Object System.Net.WebClient).DownloadString('https://raw.githubusercontent.com/dungxtd/tehtris-env-setup/master/install.ps1'))" -InstallEdrV1
+Set-ExecutionPolicy Bypass -Scope Process -Force; & { iex ((New-Object System.Net.WebClient).DownloadString('https://raw.githubusercontent.com/dungxtd/tehtris-env-setup/master/install.ps1')) } -InstallEdrV1
 ```
 
 **Install EDR V2** (replace `'your_password'` with the actual password)
 ```powershell
-powershell -ExecutionPolicy Bypass -Command "iex ((New-Object System.Net.WebClient).DownloadString('https://raw.githubusercontent.com/dungxtd/tehtris-env-setup/master/install.ps1'))" -InstallEdrV2 -UninstallEdrPassword 'your_password'
+Set-ExecutionPolicy Bypass -Scope Process -Force; & { iex ((New-Object System.Net.WebClient).DownloadString('https://raw.githubusercontent.com/dungxtd/tehtris-env-setup/master/install.ps1')) } -InstallEdrV2 -UninstallEdrPassword 'your_password'
 ```
 
 ## Logging

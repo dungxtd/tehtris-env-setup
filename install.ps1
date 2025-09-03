@@ -2,7 +2,34 @@
 # USAGE: powershell "iex ((New-Object System.Net.WebClient).DownloadString('https://raw.githubusercontent.com/dungxtd/tehtris-env-setup/master/install.ps1'))" -InstallEdrV1
 
 [CmdletBinding(SupportsShouldProcess=$true)]
-param ()
+param (
+    [Parameter(Mandatory=$false)]
+    [switch]$DisableSec,
+
+    [Parameter(Mandatory=$false)]
+    [switch]$EnableSec,
+
+    [Parameter(Mandatory=$false)]
+    [switch]$InstallTools,
+
+    [Parameter(Mandatory=$false)]
+    [string]$InstallEdrPath,
+
+    [Parameter(Mandatory=$false)]
+    [switch]$InstallEdrV1,
+
+    [Parameter(Mandatory=$false)]
+    [switch]$InstallEdrV2,
+
+    [Parameter(Mandatory=$false)]
+    [string]$UninstallEdrPassword,
+
+    [Parameter(Mandatory=$false)]
+    [string]$UninstallEdrKeyFile,
+
+    [Parameter(Mandatory=$false)]
+    [switch]$All
+)
 
 # --- Configuration ---
 $ApiUrl = "https://api.github.com/repos/dungxtd/tehtris-env-setup/releases/latest"
