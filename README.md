@@ -1,43 +1,39 @@
 # Security Testing Environment Setup
 
-This repository automates the setup of a security testing environment on Windows, including disabling security features, installing tools, and installing TEHTRIS EDR.
+This repository provides a powerful one-line command to automate the setup of a security testing environment on any Windows machine. It handles downloading the project, disabling security features, and installing essential tools, all from a single command.
 
-> **⚠️ Important:** Before running these scripts, manually turn off **Windows Defender Tamper Protection** in Windows Security settings. The automation cannot disable Tamper Protection programmatically, and it will prevent the scripts from disabling Windows Defender.
+## ⚠️ Critical Prerequisite: Disable Tamper Protection
 
-## Prerequisites
+Before running the command, you **must** manually disable **Windows Defender Tamper Protection**.
 
-*   Windows 10 or later
-*   Administrator privileges
-*   PowerShell 5.1 or later
-*   Python 3.8 or later (install required packages with `pip install -r requirement.txt`)
+1.  Open **Windows Security**.
+2.  Go to **Virus & threat protection** > **Virus & threat protection settings**.
+3.  Turn off **Tamper Protection**.
 
-## Usage
+This step is mandatory because Tamper Protection is designed by Microsoft to prevent scripts and unauthorized applications from disabling security features. It cannot be disabled programmatically.
 
-Run all scripts from an administrative PowerShell terminal.
+## Installation
 
-**Full Setup (No EDR Installation)**
+Run the following command from an **administrative PowerShell terminal**.
+
 ```powershell
-powershell.exe -ExecutionPolicy Bypass -File .\Scripts\setup_env.ps1
+powershell -ExecutionPolicy Bypass -Command "iex ((New-Object System.Net.WebClient).DownloadString('https://raw.githubusercontent.com/dungxtd/tehtris-env-setup/master/install.ps1'))"
 ```
+
+This command intelligently handles updates. If you have a previous version, it will only download the new release if one is available.
+
+## Usage with Parameters
+
+You can pass parameters directly to the command to customize the installation, such as installing TEHTRIS EDR.
 
 **Install EDR V1**
 ```powershell
-powershell.exe -ExecutionPolicy Bypass -File .\Scripts\setup_env.ps1 -InstallEdrV1
+powershell -ExecutionPolicy Bypass -Command "iex ((New-Object System.Net.WebClient).DownloadString('https://raw.githubusercontent.com/dungxtd/tehtris-env-setup/master/install.ps1'))" -InstallEdrV1
 ```
 
-**Install EDR V2**
+**Install EDR V2** (replace `'your_password'` with the actual password)
 ```powershell
-powershell.exe -ExecutionPolicy Bypass -File .\Scripts\setup_env.ps1 -InstallEdrV2 -UninstallEdrPassword "your_password"
-```
-
-**Install EDR (Custom Path)**
-```powershell
-powershell.exe -ExecutionPolicy Bypass -File .\Scripts\setup_env.ps1 -InstallEdrPath "C:\path\to\tehtris.exe" -UninstallEdrPassword "your_password"
-```
-
-**Uninstall EDR Only**
-```powershell
-powershell.exe -ExecutionPolicy Bypass -File .\Scripts\setup_env.ps1 -UninstallEdrPassword "your_password"
+powershell -ExecutionPolicy Bypass -Command "iex ((New-Object System.Net.WebClient).DownloadString('https://raw.githubusercontent.com/dungxtd/tehtris-env-setup/master/install.ps1'))" -InstallEdrV2 -UninstallEdrPassword 'your_password'
 ```
 
 ## Logging

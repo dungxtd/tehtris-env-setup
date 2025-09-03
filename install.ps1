@@ -10,6 +10,7 @@ $TempDir = "C:\Temp"
 $RepoZipPath = Join-Path $TempDir "tehtris-env-setup.zip"
 $ExtractedPath = Join-Path $TempDir "tehtris-env-setup"
 $SetupScriptPath = Join-Path $ExtractedPath "Scripts\setup_env.ps1"
+$VersionFilePath = Join-Path $ExtractedPath "version.txt"
 
 # --- Bootstrap Functions ---
 function Write-BootstrapLog {
@@ -33,26 +34,39 @@ try {
         New-Item -ItemType Directory -Path $TempDir -Force | Out-Null
     }
 
-    # 3. Download the Repository from the Latest Release
-    Write-BootstrapLog "Fetching latest release from GitHub..." -Color Yellow
+    # 3. Check for Updates and Download if Necessary
+    Write-BootstrapLog "Fetching latest release information from GitHub..." -Color Yellow
     $release = Invoke-RestMethod -Uri $ApiUrl -UseBasicParsing
-    $downloadUrl = $release.assets | Where-Object { $_.name -eq "tehtris-env-setup.zip" } | Select-Object -ExpandProperty browser_download_url
+    $latestVersion = $release.tag_name
 
-    if (-not $downloadUrl) {
-        throw "Could not find 'tehtris-env-setup.zip' in the latest release. Please check the repository releases."
+    $localVersion = ""
+    if (Test-Path $VersionFilePath) {
+        $localVersion = Get-Content $VersionFilePath
     }
 
-    Write-BootstrapLog "Downloading release asset from $downloadUrl..." -Color Yellow
-    (New-Object System.Net.WebClient).DownloadFile($downloadUrl, $RepoZipPath)
-    Write-BootstrapLog "Release downloaded successfully." -Color Green
+    if ($localVersion -eq $latestVersion) {
+        Write-BootstrapLog "You already have the latest version ($latestVersion). Skipping download." -Color Green
+    } else {
+        Write-BootstrapLog "New version ($latestVersion) found. Local version is '$localVersion'." -Color Yellow
+        $downloadUrl = $release.assets | Where-Object { $_.name -eq "tehtris-env-setup.zip" } | Select-Object -ExpandProperty browser_download_url
 
-    # 4. Extract the Repository
-    Write-BootstrapLog "Extracting repository to $ExtractedPath..." -Color Yellow
-    if (Test-Path $ExtractedPath) {
-        Remove-Item -Recurse -Force $ExtractedPath
+        if (-not $downloadUrl) {
+            throw "Could not find 'tehtris-env-setup.zip' in the latest release."
+        }
+
+        Write-BootstrapLog "Downloading release asset from $downloadUrl..." -Color Yellow
+        (New-Object System.Net.WebClient).DownloadFile($downloadUrl, $RepoZipPath)
+        Write-BootstrapLog "Release downloaded successfully." -Color Green
+
+        # 4. Extract the Repository
+        Write-BootstrapLog "Extracting repository to $ExtractedPath..." -Color Yellow
+        if (Test-Path $ExtractedPath) {
+            Remove-Item -Recurse -Force $ExtractedPath
+        }
+        Expand-Archive -Path $RepoZipPath -DestinationPath $ExtractedPath -Force
+        Set-Content -Path $VersionFilePath -Value $latestVersion
+        Write-BootstrapLog "Repository extracted and version updated to $latestVersion." -Color Green
     }
-    Expand-Archive -Path $RepoZipPath -DestinationPath $ExtractedPath -Force
-    Write-BootstrapLog "Repository extracted successfully." -Color Green
 
     # 5. Verify Setup Script Exists
     if (-not (Test-Path $SetupScriptPath)) {
