@@ -14,26 +14,26 @@ This step is mandatory because Tamper Protection is designed by Microsoft to pre
 
 ## Installation
 
-Run the following command from an **administrative PowerShell terminal**.
+Run the following command from any **administrative terminal** (PowerShell, Command Prompt, or bash).
 
 ```powershell
-Set-ExecutionPolicy Bypass -Scope Process -Force; iex ((New-Object System.Net.WebClient).DownloadString('https://raw.githubusercontent.com/dungxtd/tehtris-env-setup/master/install.ps1'))
+powershell.exe -ExecutionPolicy Bypass -Command "& {iex ((New-Object System.Net.WebClient).DownloadString('https://raw.githubusercontent.com/dungxtd/tehtris-env-setup/master/install.ps1'))}"
 ```
 
 This command intelligently handles updates. If you have a previous version, it will only download the new release if one is available.
 
 ## Usage with Parameters
 
-To pass parameters, use the `& { ... }` script block syntax as shown below. This ensures the arguments are passed to the script, not the installer command.
+To pass parameters, simply add them to the end of the command.
 
 **Install EDR V1**
 ```powershell
-Set-ExecutionPolicy Bypass -Scope Process -Force; & { iex ((New-Object System.Net.WebClient).DownloadString('https://raw.githubusercontent.com/dungxtd/tehtris-env-setup/master/install.ps1')) } -InstallEdrV1
+powershell.exe -ExecutionPolicy Bypass -Command "& {iex ((New-Object System.Net.WebClient).DownloadString('https://raw.githubusercontent.com/dungxtd/tehtris-env-setup/master/install.ps1'))} -InstallEdrV1"
 ```
 
 **Install EDR V2** (replace `'your_password'` with the actual password)
 ```powershell
-Set-ExecutionPolicy Bypass -Scope Process -Force; & { iex ((New-Object System.Net.WebClient).DownloadString('https://raw.githubusercontent.com/dungxtd/tehtris-env-setup/master/install.ps1')) } -InstallEdrV2 -UninstallEdrPassword 'your_password'
+powershell.exe -ExecutionPolicy Bypass -Command "& {iex ((New-Object System.Net.WebClient).DownloadString('https://raw.githubusercontent.com/dungxtd/tehtris-env-setup/master/install.ps1'))} -InstallEdrV2 -UninstallEdrPassword 'your_password'"
 ```
 
 ## Logging
