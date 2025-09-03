@@ -9,7 +9,7 @@
 .PARAMETER InstallEdrV1
     Install TEHTRIS EDR V1 using default installer name: TEHTRIS_EDR_1.8.1_rc2.exe
 .PARAMETER InstallEdrV2
-    Install TEHTRIS EDR V2 using default installer name: TEHTRIS_EDR_2.0.0_Windows_x86_64_MS-28.msi
+    Install TEHTRIS EDR V2 using default installer name: TEHTRIS_EDR_2.1.0_Windows_x86_64_MS-36.msi
 .PARAMETER InstallEdrPath
     Install TEHTRIS EDR using a custom installer path
 .EXAMPLE
@@ -26,7 +26,7 @@
 
     Default installer locations (in Tools directory):
     - V1: TEHTRIS_EDR_1.8.1_rc2.exe
-    - V2: TEHTRIS_EDR_2.0.0_Windows_x86_64_MS-28.msi
+    - V2: TEHTRIS_EDR_2.1.0_Windows_x86_64_MS-36.msi
 #>
 
 param(
@@ -449,7 +449,7 @@ function Get-DefaultEdrPath {
 
     # Define default installer names
     $v1DefaultName = "TEHTRIS_EDR_1.8.1_rc2.exe"
-    $v2DefaultName = "TEHTRIS_EDR_2.0.0_Windows_x86_64_MS-28.msi"
+    $v2DefaultName = "TEHTRIS_EDR_2.1.0_Windows_x86_64_MS-36.msi"
 
     $v1Path = Join-Path $Global:ToolsDir $v1DefaultName
     $v2Path = Join-Path $Global:ToolsDir $v2DefaultName

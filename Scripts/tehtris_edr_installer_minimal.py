@@ -34,9 +34,9 @@ class TehtrisEDRInstaller:
         self.logger.info(f"Detected EDR version: {self.edr_version}")
 
         # Configuration
-        self.server_address = "xpgapp16.tehtris.net"
-        self.tag = "XPG_QAT"
-        self.license_key = "MH83-2CDX-9DXQ-LG89-92FF"
+        self.server_address = "xfiapp12.tehtris.net"
+        self.tag = "XFI_QAT"
+        self.license_key = "HTDT-45FK-BQH8-HHMQ-585H"
 
         # Version-specific configuration
         self.requires_license_key = self._requires_license_key()
