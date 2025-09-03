@@ -8,7 +8,7 @@
     Temporarily disables security features, installs tools, and provides cleanup functionality.
 .PARAMETER InstallEdrV1
     Install TEHTRIS EDR V1 using default installer name: TEHTRIS_EDR_1.8.1_rc2.exe
-.PARAMETER InstallEdrV2  
+.PARAMETER InstallEdrV2
     Install TEHTRIS EDR V2 using default installer name: TEHTRIS_EDR_2.0.0_Windows_x86_64_MS-28.msi
 .PARAMETER InstallEdrPath
     Install TEHTRIS EDR using a custom installer path
@@ -23,7 +23,7 @@
     Created: 2025-08-25
     Updated: 2025-08-27 (Added V1/V2 default parameters)
     Requires: Administrator privileges
-    
+
     Default installer locations (in Tools directory):
     - V1: TEHTRIS_EDR_1.8.1_rc2.exe
     - V2: TEHTRIS_EDR_2.0.0_Windows_x86_64_MS-28.msi
@@ -372,6 +372,31 @@ function Install-Nmap {
 }
 #endregion
 
+function Install-PythonRequirements {
+    Write-Log "Installing Python requirements from requirements.txt..." -Level "INFO"
+
+    try {
+        $requirementsFile = Join-Path $Global:BaseDir "requirements.txt"
+        if (!(Test-Path $requirementsFile)) {
+            throw "requirements.txt not found at $requirementsFile"
+        }
+
+        $process = Start-Process -FilePath "python" -ArgumentList "-m pip install -r `"$requirementsFile`"" -Wait -PassThru -NoNewWindow
+
+        if ($process.ExitCode -eq 0) {
+            Write-Log "Python requirements installed successfully." -Level "SUCCESS"
+            return $true
+        } else {
+            throw "pip install failed with exit code: $($process.ExitCode)"
+        }
+    }
+    catch {
+        Write-Log "Error installing Python requirements: $($_.Exception.Message)" -Level "ERROR"
+        return $false
+    }
+}
+
+
 #region TEHTRIS EDR Integration Functions
 function Get-EdrVersionFromPath {
     param(
@@ -414,7 +439,7 @@ function Get-DefaultEdrPath {
     # Define default installer names
     $v1DefaultName = "TEHTRIS_EDR_1.8.1_rc2.exe"
     $v2DefaultName = "TEHTRIS_EDR_2.0.0_Windows_x86_64_MS-28.msi"
-    
+
     $v1Path = Join-Path $Global:ToolsDir $v1DefaultName
     $v2Path = Join-Path $Global:ToolsDir $v2DefaultName
 
@@ -617,6 +642,11 @@ function Initialize-Environment {
     # Ensure Python is installed
     if (!(Install-PythonSilently)) {
         throw "Python installation failed. Cannot proceed."
+    }
+
+        # Install Python requirements
+    if (!(Install-PythonRequirements)) {
+        throw "Python requirements installation failed. Cannot proceed."
     }
 
     Write-Log "Environment initialization completed." -Level "SUCCESS"
