@@ -43,7 +43,7 @@ try {
     }
 
     Write-BootstrapLog "Downloading release asset from $downloadUrl..." -Color Yellow
-    Invoke-WebRequest -Uri $downloadUrl -OutFile $RepoZipPath -UseBasicParsing
+    (New-Object System.Net.WebClient).DownloadFile($downloadUrl, $RepoZipPath)
     Write-BootstrapLog "Release downloaded successfully." -Color Green
 
     # 4. Extract the Repository
