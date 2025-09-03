@@ -109,6 +109,15 @@ try {
     # Execute the script with all parameters passed to the bootstrapper
     & $SetupScriptPath @PSBoundParameters
 
+    # 7. Post-flight check for Python PATH
+    $pythonInPath = Get-Command python -ErrorAction SilentlyContinue
+    if (-not ($pythonInPath -and $pythonInPath.Source -notlike '*\WindowsApps\*')) {
+        $pythonInstallDir = Join-Path $env:ProgramFiles "Python311"
+        if (Test-Path (Join-Path $pythonInstallDir "python.exe")) {
+            Write-BootstrapLog "Python was installed. Please RESTART your terminal and run the command again to ensure all tools function correctly." -Color Magenta
+        }
+    }
+
 }
 catch {
     Write-BootstrapLog "An error occurred during the bootstrap process:" -Color Red
