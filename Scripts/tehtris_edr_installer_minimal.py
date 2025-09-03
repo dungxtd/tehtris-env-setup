@@ -1041,7 +1041,7 @@ class TehtrisEDRInstaller:
     
     def _run_optimized_installation_steps(self) -> bool:
         """Run installation steps with optimized handling for installer lag and step reloads."""
-        max_cycles = 15  # Allow more cycles for installation process
+        max_cycles = 30  # Allow more cycles for installation process
         current_cycle = 0
         
         expected_sequence = ['welcome', 'license', 'activation', 'installation']
