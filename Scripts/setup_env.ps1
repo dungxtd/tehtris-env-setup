@@ -237,7 +237,7 @@ function Install-PythonSilently {
         $downloadUrl = "https://www.python.org/ftp/python/3.11.4/python-3.11.4-amd64.exe" # Specify a recent, stable version
 
         Write-Log "Downloading Python installer from $downloadUrl..." -Level "INFO"
-        Invoke-WebRequest -Uri $downloadUrl -OutFile $tempInstaller -UseBasicParsing
+        (New-Object System.Net.WebClient).DownloadFile($downloadUrl, $tempInstaller)
         Write-Log "Python installer downloaded successfully." -Level "SUCCESS"
 
         Write-Log "Starting silent installation..." -Level "INFO"
@@ -296,7 +296,7 @@ function Install-Mimikatz {
             }
 
             # Download the ZIP file
-            Invoke-WebRequest -Uri $downloadUrl -OutFile $tempZip -UseBasicParsing
+            (New-Object System.Net.WebClient).DownloadFile($downloadUrl, $tempZip)
             Write-Log "Mimikatz downloaded successfully." -Level "SUCCESS"
         }
 
@@ -341,15 +341,15 @@ function Install-Nmap {
             Write-Log "Nmap installer already downloaded. Using existing file." -Level "INFO"
         } else {
             Write-Log "Downloading Nmap installer..." -Level "INFO"
-            $nmapPage = Invoke-WebRequest -Uri "https://nmap.org/download.html" -UseBasicParsing
+            $nmapPageContent = (New-Object System.Net.WebClient).DownloadString("https://nmap.org/download.html")
             $installerPattern = 'https://nmap\.org/dist/nmap-[\d\.]+-setup\.exe'
-            $downloadUrl = [regex]::Match($nmapPage.Content, $installerPattern).Value
+            $downloadUrl = [regex]::Match($nmapPageContent, $installerPattern).Value
 
             if (!$downloadUrl) {
                 throw "Could not find Nmap installer download URL"
             }
 
-            Invoke-WebRequest -Uri $downloadUrl -OutFile $tempInstaller -UseBasicParsing
+            (New-Object System.Net.WebClient).DownloadFile($downloadUrl, $tempInstaller)
             Write-Log "Nmap installer downloaded successfully." -Level "SUCCESS"
         }
 
