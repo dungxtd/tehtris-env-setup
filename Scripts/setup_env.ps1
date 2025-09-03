@@ -224,11 +224,13 @@ function Install-PythonSilently {
     Write-Log "Checking for Python installation..." -Level "INFO"
 
     try {
-        # Check for a real Python installation, ignoring the Windows Store stub
-        $pythonPath = Get-Command python -ErrorAction SilentlyContinue
-        if ($pythonPath -and $pythonPath.Source -notlike '*\WindowsApps\*') {
-            Write-Log "Python is already installed at: $($pythonPath.Source)" -Level "SUCCESS"
-            return $true
+        # Check all available python commands for a real installation
+        $pythonCommands = Get-Command python -All -ErrorAction SilentlyContinue
+        foreach ($pythonCmd in $pythonCommands) {
+            if ($pythonCmd.Source -notlike '*\WindowsApps\*') {
+                Write-Log "Valid Python installation found at: $($pythonCmd.Source)" -Level "SUCCESS"
+                return $true
+            }
         }
 
         Write-Log "Python not found. Starting silent installation..." -Level "INFO"
