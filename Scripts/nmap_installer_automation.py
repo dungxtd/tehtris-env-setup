@@ -437,6 +437,152 @@ class NmapInstaller:
         self.logger.warning("Could not verify Nmap installation")
         return False
 
+    def handle_concurrent_installers(self) -> bool:
+        """Handle both Nmap and Npcap installers that may run concurrently."""
+        self.logger.info("Handling concurrent Nmap and Npcap installers...")
+
+        max_duration = 300  # 5 minutes total timeout
+        start_time = time.time()
+        nmap_complete = False
+        npcap_complete = False
+
+        while time.time() - start_time < max_duration:
+            try:
+                import win32gui
+
+                # Find all installer windows
+                nmap_windows = []
+                npcap_windows = []
+
+                def find_installer_windows(hwnd, param):
+                    try:
+                        if win32gui.IsWindowVisible(hwnd):
+                            window_text = win32gui.GetWindowText(hwnd)
+                            if "nmap" in window_text.lower() and "setup" in window_text.lower():
+                                nmap_windows.append((hwnd, window_text))
+                            elif "npcap" in window_text.lower():
+                                npcap_windows.append((hwnd, window_text))
+                    except:
+                        pass
+                    return True
+
+                win32gui.EnumWindows(find_installer_windows, None)
+
+                # Handle Npcap installer first (higher priority when both are present)
+                if npcap_windows and not npcap_complete:
+                    self.logger.info(f"Found Npcap window: {npcap_windows[0][1]}")
+                    if self._handle_npcap_window(npcap_windows[0][0]):
+                        npcap_complete = True
+                        self.logger.info("Npcap installation completed")
+
+                # Handle Nmap installer
+                if nmap_windows and not nmap_complete:
+                    self.logger.info(f"Found Nmap window: {nmap_windows[0][1]}")
+                    if self._handle_nmap_window(nmap_windows[0][0]):
+                        nmap_complete = True
+                        self.logger.info("Nmap installation completed")
+
+                # Check if both are complete
+                if not nmap_windows and not npcap_windows:
+                    self.logger.info("No installer windows found - installation likely complete")
+                    break
+
+                # If Nmap is installing and Npcap appears, prioritize Npcap
+                if nmap_windows and npcap_windows:
+                    self.logger.info("Both installers active - prioritizing Npcap")
+
+                time.sleep(1)
+
+            except Exception as e:
+                self.logger.error(f"Error in concurrent handler: {e}")
+                time.sleep(2)
+
+        return True
+
+    def _handle_npcap_window(self, hwnd) -> bool:
+        """Handle a specific Npcap window."""
+        try:
+            import win32gui
+            import win32con
+
+            # Get buttons in this window
+            buttons = []
+            def find_buttons(child_hwnd, param):
+                try:
+                    if win32gui.IsWindowVisible(child_hwnd):
+                        window_text = win32gui.GetWindowText(child_hwnd)
+                        class_name = win32gui.GetClassName(child_hwnd)
+                        if window_text and class_name == 'Button':
+                            buttons.append((child_hwnd, window_text.replace('&', '').lower().strip()))
+                except:
+                    pass
+                return True
+
+            win32gui.EnumChildWindows(hwnd, find_buttons, None)
+
+            # Priority order for Npcap buttons
+            npcap_button_priority = ["i agree", "agree", "next", "install", "finish", "close"]
+
+            for priority_button in npcap_button_priority:
+                for button_hwnd, button_text in buttons:
+                    if priority_button in button_text:
+                        win32gui.SendMessage(button_hwnd, win32con.WM_LBUTTONDOWN, 0, 0)
+                        win32gui.SendMessage(button_hwnd, win32con.WM_LBUTTONUP, 0, 0)
+                        self.logger.info(f"Npcap: Clicked '{button_text}' button")
+                        time.sleep(2 if priority_button == "install" else 1)
+                        return False  # Continue processing this window
+
+            return False  # Keep processing
+
+        except Exception as e:
+            self.logger.error(f"Error handling Npcap window: {e}")
+            return False
+
+    def _handle_nmap_window(self, hwnd) -> bool:
+        """Handle a specific Nmap window."""
+        try:
+            import win32gui
+            import win32con
+
+            # Get buttons in this window
+            buttons = []
+            def find_buttons(child_hwnd, param):
+                try:
+                    if win32gui.IsWindowVisible(child_hwnd):
+                        window_text = win32gui.GetWindowText(child_hwnd)
+                        class_name = win32gui.GetClassName(child_hwnd)
+                        if window_text and class_name == 'Button':
+                            buttons.append((child_hwnd, window_text.replace('&', '').lower().strip()))
+                except:
+                    pass
+                return True
+
+            win32gui.EnumChildWindows(hwnd, find_buttons, None)
+
+            # Check if this is an "Installing" window (should wait)
+            window_text = win32gui.GetWindowText(hwnd)
+            if "installing" in window_text.lower():
+                self.logger.info("Nmap installation in progress - waiting...")
+                return False  # Keep processing
+
+            # Priority order for Nmap buttons
+            nmap_button_priority = ["next", "i agree", "agree", "install", "finish", "close"]
+
+            for priority_button in nmap_button_priority:
+                for button_hwnd, button_text in buttons:
+                    if priority_button in button_text:
+                        win32gui.SendMessage(button_hwnd, win32con.WM_LBUTTONDOWN, 0, 0)
+                        win32gui.SendMessage(button_hwnd, win32con.WM_LBUTTONUP, 0, 0)
+                        self.logger.info(f"Nmap: Clicked '{button_text}' button")
+                        time.sleep(3 if priority_button == "install" else 1)
+                        return False  # Continue processing this window
+
+            return False  # Keep processing
+
+        except Exception as e:
+            self.logger.error(f"Error handling Nmap window: {e}")
+            return False
+
     def run_installation(self) -> bool:
         """Run the complete installation process."""
         self.logger.info("Starting Nmap installation automation")
@@ -448,10 +594,8 @@ class NmapInstaller:
             if not self.launch_installer():
                 return False
 
-            if not self.handle_nmap_installer():
-                return False
-
-            if not self.handle_npcap_installer():
+            # Use the new concurrent handler instead of separate handlers
+            if not self.handle_concurrent_installers():
                 return False
 
             # Verify installation
