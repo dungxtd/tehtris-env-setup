@@ -471,16 +471,24 @@ class NmapInstaller:
                 # Handle Npcap installer first (higher priority when both are present)
                 if npcap_windows and not npcap_complete:
                     self.logger.info(f"Found Npcap window: {npcap_windows[0][1]}")
-                    if self._handle_npcap_window(npcap_windows[0][0]):
-                        npcap_complete = True
-                        self.logger.info("Npcap installation completed")
+                    self._handle_npcap_window(npcap_windows[0][0])
+                    # Don't handle Nmap while Npcap is active
+                    continue
 
-                # Handle Nmap installer
-                if nmap_windows and not nmap_complete:
+                # Only handle Nmap if no Npcap windows are present
+                if nmap_windows and not nmap_complete and not npcap_windows:
                     self.logger.info(f"Found Nmap window: {nmap_windows[0][1]}")
-                    if self._handle_nmap_window(nmap_windows[0][0]):
-                        nmap_complete = True
-                        self.logger.info("Nmap installation completed")
+                    self._handle_nmap_window(nmap_windows[0][0])
+
+                # Check if Npcap is complete (no more Npcap windows)
+                if not npcap_windows and not npcap_complete:
+                    npcap_complete = True
+                    self.logger.info("Npcap installation completed (no more Npcap windows)")
+
+                # Check if Nmap is complete (no more Nmap windows)
+                if not nmap_windows and not nmap_complete:
+                    nmap_complete = True
+                    self.logger.info("Nmap installation completed (no more Nmap windows)")
 
                 # Check if both are complete
                 if not nmap_windows and not npcap_windows:
@@ -505,32 +513,82 @@ class NmapInstaller:
             import win32gui
             import win32con
 
-            # Get buttons in this window
-            buttons = []
-            def find_buttons(child_hwnd, param):
+            # Get window title for debugging
+            window_title = win32gui.GetWindowText(hwnd)
+            self.logger.info(f"Processing Npcap window: {window_title}")
+
+            # Get all buttons and checkboxes in this window
+            controls = []
+            def find_controls(child_hwnd, param):
                 try:
                     if win32gui.IsWindowVisible(child_hwnd):
                         window_text = win32gui.GetWindowText(child_hwnd)
                         class_name = win32gui.GetClassName(child_hwnd)
-                        if window_text and class_name == 'Button':
-                            buttons.append((child_hwnd, window_text.replace('&', '').lower().strip()))
+                        if class_name == 'Button' and window_text:
+                            clean_text = window_text.replace('&', '').strip()
+                            controls.append((child_hwnd, clean_text, class_name))
+                            self.logger.info(f"Found Npcap control: '{clean_text}' ({class_name})")
                 except:
                     pass
                 return True
 
-            win32gui.EnumChildWindows(hwnd, find_buttons, None)
+            win32gui.EnumChildWindows(hwnd, find_controls, None)
 
-            # Priority order for Npcap buttons
-            npcap_button_priority = ["i agree", "agree", "next", "install", "finish", "close"]
+            if not controls:
+                self.logger.warning("No controls found in Npcap window")
+                return False
 
-            for priority_button in npcap_button_priority:
-                for button_hwnd, button_text in buttons:
-                    if priority_button in button_text:
-                        win32gui.SendMessage(button_hwnd, win32con.WM_LBUTTONDOWN, 0, 0)
-                        win32gui.SendMessage(button_hwnd, win32con.WM_LBUTTONUP, 0, 0)
-                        self.logger.info(f"Npcap: Clicked '{button_text}' button")
-                        time.sleep(2 if priority_button == "install" else 1)
-                        return False  # Continue processing this window
+            # Handle different Npcap installation steps
+            button_clicked = False
+
+            # Step 1: License Agreement - look for "I Agree" button
+            for control_hwnd, control_text, class_name in controls:
+                if "i agree" in control_text.lower():
+                    win32gui.SendMessage(control_hwnd, win32con.WM_LBUTTONDOWN, 0, 0)
+                    win32gui.SendMessage(control_hwnd, win32con.WM_LBUTTONUP, 0, 0)
+                    self.logger.info(f"Npcap: Clicked 'I Agree' button")
+                    time.sleep(1)
+                    button_clicked = True
+                    break
+
+            # Step 2: Installation Options - look for "Install" button
+            if not button_clicked:
+                for control_hwnd, control_text, class_name in controls:
+                    if "install" in control_text.lower() and "uninstall" not in control_text.lower():
+                        win32gui.SendMessage(control_hwnd, win32con.WM_LBUTTONDOWN, 0, 0)
+                        win32gui.SendMessage(control_hwnd, win32con.WM_LBUTTONUP, 0, 0)
+                        self.logger.info(f"Npcap: Clicked 'Install' button")
+                        time.sleep(3)  # Installation takes time
+                        button_clicked = True
+                        break
+
+            # Step 3: Completion - look for "Finish" or "Close" button
+            if not button_clicked:
+                for control_hwnd, control_text, class_name in controls:
+                    if any(word in control_text.lower() for word in ["finish", "close", "done"]):
+                        win32gui.SendMessage(control_hwnd, win32con.WM_LBUTTONDOWN, 0, 0)
+                        win32gui.SendMessage(control_hwnd, win32con.WM_LBUTTONUP, 0, 0)
+                        self.logger.info(f"Npcap: Clicked '{control_text}' button")
+                        time.sleep(1)
+                        button_clicked = True
+                        break
+
+            # Fallback: try "Next" button
+            if not button_clicked:
+                for control_hwnd, control_text, class_name in controls:
+                    if "next" in control_text.lower():
+                        win32gui.SendMessage(control_hwnd, win32con.WM_LBUTTONDOWN, 0, 0)
+                        win32gui.SendMessage(control_hwnd, win32con.WM_LBUTTONUP, 0, 0)
+                        self.logger.info(f"Npcap: Clicked 'Next' button")
+                        time.sleep(1)
+                        button_clicked = True
+                        break
+
+            if not button_clicked:
+                self.logger.warning(f"No actionable button found in Npcap window")
+                # List all available controls for debugging
+                control_list = [f"'{text}'" for _, text, _ in controls]
+                self.logger.info(f"Available Npcap controls: {', '.join(control_list)}")
 
             return False  # Keep processing
 
