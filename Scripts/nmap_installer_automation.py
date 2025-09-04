@@ -375,7 +375,7 @@ class NmapInstaller:
 
                 # Handle Npcap installer with comprehensive button checking
                 button_priority = [
-                    ("i agree", 2), ("agree", 2), ("accept", 2), ("next", 2),
+                    ("next", 2),
                     ("install", 8), ("yes", 2), ("ok", 2),
                     ("finish", 2), ("close", 1), ("done", 1)
                 ]
@@ -516,8 +516,8 @@ class NmapInstaller:
             button_priority = [
                 'install',
                 'finish',
-                'next >', # Fallback
-                'close'   # Fallback
+                'next >',     # Fallback
+                'close'       # Fallback
             ]
 
             # Find and click the highest-priority button available.
@@ -572,15 +572,7 @@ class NmapInstaller:
 
             # Determine step and act
             action_taken = False
-            if 'license agreement' in all_text:
-                self.logger.info("Nmap Step: License Agreement")
-                for btn in buttons:
-                    if 'i agree' in btn['text']:
-                        win32gui.SendMessage(btn['hwnd'], win32con.BM_CLICK, 0, 0)
-                        self.logger.info("Nmap Action: Clicked 'I Agree'")
-                        action_taken = True
-                        break
-            elif 'choose components' in all_text:
+            if 'choose components' in all_text:
                 self.logger.info("Nmap Step: Choose Components")
                 for btn in buttons:
                     if 'next >' in btn['text']:
