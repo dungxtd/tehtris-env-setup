@@ -342,6 +342,7 @@ function Install-Nmap {
 
         if (Test-Path $nmapExe) {
             Write-Log "Nmap already installed. Skipping download." -Level "INFO"
+            Add-DirectoryToPath -Directory $installDir
             return $true
         }
 
@@ -364,16 +365,28 @@ function Install-Nmap {
             Write-Log "Nmap installer downloaded successfully." -Level "SUCCESS"
         }
 
-        # Launch interactive installer
-        Write-Log "Launching Nmap installer. Please follow the on-screen instructions to install Nmap and Npcap." -Level "INFO"
-        Write-Log "The script will continue after you close the installer." -Level "INFO"
-        $installProcess = Start-Process -FilePath $tempInstaller -Wait -PassThru
+        # Use Python automation script for installation
+        $pythonScript = Join-Path $Global:ScriptsDir "nmap_installer_automation.py"
+        if (!(Test-Path $pythonScript)) {
+            throw "Nmap installer automation script not found at: $pythonScript"
+        }
 
-        if (Test-Path $nmapExe) {
-            Write-Log "Nmap installation confirmed." -Level "SUCCESS"
-            return $true
+        Write-Log "Executing automated Nmap installer..." -Level "INFO"
+        $process = Start-Process -FilePath "python" -ArgumentList "`"$pythonScript`" `"$tempInstaller`"" -Wait -PassThru -NoNewWindow
+
+        if ($process.ExitCode -eq 0) {
+            Write-Log "Nmap installer automation completed successfully." -Level "SUCCESS"
+
+            # Verify installation
+            if (Test-Path $nmapExe) {
+                Write-Log "Nmap installation confirmed." -Level "SUCCESS"
+                Add-DirectoryToPath -Directory $installDir
+                return $true
+            } else {
+                throw "Nmap installation could not be confirmed after automation."
+            }
         } else {
-            throw "Nmap installation could not be confirmed. Please install manually or re-run the script."
+            throw "Nmap installer automation failed with exit code: $($process.ExitCode)"
         }
     }
     catch {
