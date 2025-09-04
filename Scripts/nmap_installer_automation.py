@@ -571,11 +571,6 @@ class NmapInstaller:
             button_texts = [b['text'] for b in buttons]
             self.logger.info(f"Nmap Window Found: Buttons={button_texts}")
 
-            # If the window is in the 'installing' state, do nothing and wait.
-            if 'installing' in all_text or 'execute:' in all_text:
-                self.logger.info("Nmap is installing, waiting...")
-                return False
-
             # Define the priority of buttons to click.
             button_priority = [
                 'i agree',
@@ -593,6 +588,11 @@ class NmapInstaller:
                         self.logger.info(f"Nmap Action: Clicked '{btn['text']}'")
                         time.sleep(2) # Wait for the next window/state
                         return False # Action taken, exit to re-evaluate
+
+            # If no priority button was found, check if it's the 'installing' screen.
+            if 'installing' in all_text or 'execute:' in all_text:
+                self.logger.info("Nmap is in the process of installing, waiting...")
+                return False
 
             self.logger.warning("No actionable button found in Nmap window.")
             return False # No action taken, continue polling
