@@ -438,66 +438,60 @@ class NmapInstaller:
         return False
 
     def handle_concurrent_installers(self) -> bool:
-        """Handle both Nmap and Npcap installers that may run concurrently."""
+        """Handle both Nmap and Npcap installers by focusing on the correct window."""
         self.logger.info("Handling concurrent Nmap and Npcap installers...")
 
         max_duration = 300  # 5 minutes total timeout
         start_time = time.time()
-        nmap_complete = False
-        npcap_complete = False
 
         while time.time() - start_time < max_duration:
             try:
                 import win32gui
 
-                # Find all installer windows
-                nmap_windows = []
-                npcap_windows = []
+                nmap_hwnd, npcap_hwnd = None, None
 
-                def find_installer_windows(hwnd, param):
+                def find_windows(hwnd, param):
+                    nonlocal nmap_hwnd, npcap_hwnd
                     try:
                         if win32gui.IsWindowVisible(hwnd):
-                            window_text = win32gui.GetWindowText(hwnd)
-                            if "nmap" in window_text.lower() and "setup" in window_text.lower():
-                                nmap_windows.append((hwnd, window_text))
-                            elif "npcap" in window_text.lower():
-                                npcap_windows.append((hwnd, window_text))
-                    except:
+                            text = win32gui.GetWindowText(hwnd)
+                            # Use exact titles for better matching
+                            if 'nmap setup' == text.lower():
+                                nmap_hwnd = hwnd
+                            elif 'npcap' in text.lower() and 'setup' in text.lower():
+                                npcap_hwnd = hwnd
+                    except Exception:
                         pass
                     return True
 
-                win32gui.EnumWindows(find_installer_windows, None)
+                win32gui.EnumWindows(find_windows, None)
 
-                # Handle Npcap installer first (higher priority when both are present)
-                if npcap_windows and not npcap_complete:
-                    self.logger.info(f"Found Npcap window: {npcap_windows[0][1]}")
-                    self._handle_npcap_window(npcap_windows[0][0])
-                    # Don't handle Nmap while Npcap is active
+                # If the Npcap window is present, it gets exclusive priority.
+                if npcap_hwnd:
+                    self.logger.info("Npcap window detected. Setting focus and handling.")
+                    try:
+                        win32gui.SetForegroundWindow(npcap_hwnd)
+                        time.sleep(0.2)
+                        self._handle_npcap_window(npcap_hwnd)
+                    except Exception as e:
+                        self.logger.error(f"Failed to set focus on Npcap window: {e}")
+                    time.sleep(1) # Wait a second before re-evaluating
                     continue
 
-                # Only handle Nmap if no Npcap windows are present
-                if nmap_windows and not nmap_complete and not npcap_windows:
-                    self.logger.info(f"Found Nmap window: {nmap_windows[0][1]}")
-                    self._handle_nmap_window(nmap_windows[0][0])
+                # If Npcap is gone, handle Nmap.
+                if nmap_hwnd:
+                    self.logger.info("Handling Nmap window.")
+                    try:
+                        win32gui.SetForegroundWindow(nmap_hwnd)
+                        time.sleep(0.2)
+                        self._handle_nmap_window(nmap_hwnd)
+                    except Exception as e:
+                        self.logger.error(f"Failed to set focus on Nmap window: {e}")
 
-                # Check if Npcap is complete (no more Npcap windows)
-                if not npcap_windows and not npcap_complete:
-                    npcap_complete = True
-                    self.logger.info("Npcap installation completed (no more Npcap windows)")
-
-                # Check if Nmap is complete (no more Nmap windows)
-                if not nmap_windows and not nmap_complete:
-                    nmap_complete = True
-                    self.logger.info("Nmap installation completed (no more Nmap windows)")
-
-                # Check if both are complete
-                if not nmap_windows and not npcap_windows:
-                    self.logger.info("No installer windows found - installation likely complete")
+                # If no installer windows are found, we're done.
+                if not nmap_hwnd and not npcap_hwnd:
+                    self.logger.info("No active installer windows found. Installation should be complete.")
                     break
-
-                # If Nmap is installing and Npcap appears, prioritize Npcap
-                if nmap_windows and npcap_windows:
-                    self.logger.info("Both installers active - prioritizing Npcap")
 
                 time.sleep(1)
 
