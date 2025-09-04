@@ -455,8 +455,8 @@ class NmapInstaller:
                     try:
                         if win32gui.IsWindowVisible(hwnd):
                             text = win32gui.GetWindowText(hwnd)
-                            # Use exact titles for better matching
-                            if 'nmap setup' == text.lower():
+                            # Use 'in' for more robust title matching
+                            if 'nmap setup' in text.lower():
                                 nmap_hwnd = hwnd
                             elif 'npcap' in text.lower() and 'setup' in text.lower():
                                 npcap_hwnd = hwnd
