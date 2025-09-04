@@ -502,63 +502,36 @@ class NmapInstaller:
         return True
 
     def _handle_npcap_window(self, hwnd) -> bool:
-        """Handle a specific Npcap window by detecting the current step."""
+        """Handle a specific Npcap window by clicking buttons in a prioritized order."""
         try:
             import win32gui
             import win32con
 
             controls = self._get_window_controls(hwnd)
             buttons = controls['buttons']
-            all_text = " ".join(controls['text'])
             button_texts = [b['text'] for b in buttons]
-            self.logger.info(f"Npcap Step Detection: Buttons={button_texts}, Text='{all_text[:100]}...'" )
+            self.logger.info(f"Npcap Window Found: Buttons={button_texts}")
 
-            action_taken = False
-            if 'license agreement' in all_text:
-                self.logger.info("Npcap Step: License Agreement")
+            # Define the priority of buttons to click.
+            button_priority = [
+                'i agree',
+                'install',
+                'next >',
+                'finish',
+                'close'
+            ]
+
+            # Find and click the highest-priority button available.
+            for priority_text in button_priority:
                 for btn in buttons:
-                    if 'i agree' in btn['text']:
+                    if priority_text in btn['text']:
                         win32gui.SendMessage(btn['hwnd'], win32con.BM_CLICK, 0, 0)
-                        self.logger.info("Npcap Action: Clicked 'I Agree'")
-                        action_taken = True
-                        break
-            elif 'installation options' in all_text:
-                self.logger.info("Npcap Step: Installation Options")
-                for btn in buttons:
-                    if 'install' in btn['text']:
-                        win32gui.SendMessage(btn['hwnd'], win32con.BM_CLICK, 0, 0)
-                        self.logger.info("Npcap Action: Clicked 'Install'")
-                        action_taken = True
-                        break
-            elif 'installation complete' in all_text or 'completed' in all_text:
-                self.logger.info("Npcap Step: Installation Completed")
-                for btn in buttons:
-                    if 'finish' in btn['text'] or 'next >' in btn['text']:
-                        win32gui.SendMessage(btn['hwnd'], win32con.BM_CLICK, 0, 0)
-                        self.logger.info(f"Npcap Action: Clicked '{btn['text']}' (Completed)")
-                        action_taken = True
-                        break
+                        self.logger.info(f"Npcap Action: Clicked '{btn['text']}'")
+                        time.sleep(2) # Wait for the next window/state
+                        return False # Action taken, exit to re-evaluate
 
-            # Fallback for any other screen
-            if not action_taken:
-                 for btn in buttons:
-                    if 'install' in btn['text']:
-                        win32gui.SendMessage(btn['hwnd'], win32con.BM_CLICK, 0, 0)
-                        self.logger.info("Npcap Action: Clicked 'Install' (Fallback)")
-                        action_taken = True
-                        break
-                 if not action_taken:
-                    for btn in buttons:
-                        if 'next >' in btn['text']:
-                            win32gui.SendMessage(btn['hwnd'], win32con.BM_CLICK, 0, 0)
-                            self.logger.info("Npcap Action: Clicked 'Next >' (Fallback)")
-                            action_taken = True
-                            break
-
-            if action_taken:
-                time.sleep(1.5)
-
-            return False # Keep processing
+            self.logger.warning("No actionable button found in Npcap window.")
+            return False # No action taken, continue polling
 
         except Exception as e:
             self.logger.error(f"Error handling Npcap window: {e}")
@@ -587,7 +560,7 @@ class NmapInstaller:
         return controls
 
     def _handle_nmap_window(self, hwnd) -> bool:
-        """Handle a specific Nmap window by detecting the current step."""
+        """Handle a specific Nmap window by clicking buttons in a prioritized order."""
         try:
             import win32gui
             import win32con
@@ -596,59 +569,33 @@ class NmapInstaller:
             buttons = controls['buttons']
             all_text = " ".join(controls['text'])
             button_texts = [b['text'] for b in buttons]
-            self.logger.info(f"Nmap Step Detection: Buttons={button_texts}, Text='{all_text[:100]}...'" )
+            self.logger.info(f"Nmap Window Found: Buttons={button_texts}")
 
-            # Determine step and act
-            action_taken = False
-            if 'license agreement' in all_text:
-                self.logger.info("Nmap Step: License Agreement")
-                for btn in buttons:
-                    if 'i agree' in btn['text']:
-                        win32gui.SendMessage(btn['hwnd'], win32con.BM_CLICK, 0, 0)
-                        self.logger.info("Nmap Action: Clicked 'I Agree'")
-                        action_taken = True
-                        break
-            elif 'choose components' in all_text:
-                self.logger.info("Nmap Step: Choose Components")
-                for btn in buttons:
-                    if 'next >' in btn['text']:
-                        win32gui.SendMessage(btn['hwnd'], win32con.BM_CLICK, 0, 0)
-                        self.logger.info("Nmap Action: Clicked 'Next >' (Components)")
-                        action_taken = True
-                        break
-            elif 'installing' in all_text or 'execute:' in all_text:
-                self.logger.info("Nmap Step: Installing (waiting)")
-                # This is a waiting step, no action to take
+            # If the window is in the 'installing' state, do nothing and wait.
+            if 'installing' in all_text or 'execute:' in all_text:
+                self.logger.info("Nmap is installing, waiting...")
                 return False
-            elif 'completed' in all_text or 'has been installed' in all_text:
-                 self.logger.info("Nmap Step: Installation Completed")
-                 for btn in buttons:
-                    if 'next >' in btn['text'] or 'finish' in btn['text']:
-                        win32gui.SendMessage(btn['hwnd'], win32con.BM_CLICK, 0, 0)
-                        self.logger.info(f"Nmap Action: Clicked '{btn['text']}' (Completed)")
-                        action_taken = True
-                        break
 
-            # Fallback for any other screen with a Next or Install button
-            if not action_taken:
+            # Define the priority of buttons to click.
+            button_priority = [
+                'i agree',
+                'next >',
+                'install',
+                'finish',
+                'close'
+            ]
+
+            # Find and click the highest-priority button available.
+            for priority_text in button_priority:
                 for btn in buttons:
-                    if 'install' in btn['text']:
+                    if priority_text in btn['text']:
                         win32gui.SendMessage(btn['hwnd'], win32con.BM_CLICK, 0, 0)
-                        self.logger.info("Nmap Action: Clicked 'Install' (Fallback)")
-                        action_taken = True
-                        break
-                if not action_taken:
-                     for btn in buttons:
-                        if 'next >' in btn['text']:
-                            win32gui.SendMessage(btn['hwnd'], win32con.BM_CLICK, 0, 0)
-                            self.logger.info("Nmap Action: Clicked 'Next >' (Fallback)")
-                            action_taken = True
-                            break
+                        self.logger.info(f"Nmap Action: Clicked '{btn['text']}'")
+                        time.sleep(2) # Wait for the next window/state
+                        return False # Action taken, exit to re-evaluate
 
-            if action_taken:
-                time.sleep(1.5)
-
-            return False # Keep processing
+            self.logger.warning("No actionable button found in Nmap window.")
+            return False # No action taken, continue polling
 
         except Exception as e:
             self.logger.error(f"Error handling Nmap window: {e}")
